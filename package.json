@@ -1,0 +1,70 @@
+{
+  "name": "codex-tabs",
+  "displayName": "Codex Tabs",
+  "description": "Open Codex agent tabs in editor with auto-patched tab labels.",
+  "version": "0.1.0",
+  "publisher": "aogoro",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aogoro/codex-tabs.git"
+  },
+  "engines": {
+    "vscode": "^1.96.2"
+  },
+  "extensionDependencies": [
+    "openai.chatgpt"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexNewTab.home",
+        "title": "Codex: Open",
+        "icon": {
+          "light": "resources/blossom-black.svg",
+          "dark": "resources/blossom-white.svg"
+        }
+      },
+      {
+        "command": "codexNewTab.addToThread",
+        "title": "Codex: Add to Thread"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "codexNewTab.home",
+          "group": "navigation@-100"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codexNewTab.home"
+        },
+        {
+          "command": "codexNewTab.addToThread"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codexNewTab.home",
+        "key": "cmd+shift+j",
+        "mac": "cmd+shift+j"
+      },
+      {
+        "command": "codexNewTab.addToThread",
+        "key": "cmd+j",
+        "mac": "cmd+j",
+        "when": "editorTextFocus"
+      }
+    ]
+  }
+}
