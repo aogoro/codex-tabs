@@ -52,7 +52,7 @@ function sliceFrom(content, needle, length) {
 
 const codexDir = findCodexExtDir();
 const assetsDir = codexDir ? path.join(codexDir, 'webview', 'assets') : null;
-const routeFile = assetsDir ? findFileByPrefix(assetsDir, 'use-resolved-theme-variant-', '.js') : null;
+const routeFile = assetsDir ? findFileByPrefix(assetsDir, 'route-scope-', '.js') : null;
 const appMainFile = assetsDir ? findFileByPrefix(assetsDir, 'app-main-', '.js') : null;
 const navigateFile = assetsDir ? findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js') : null;
 
@@ -78,21 +78,21 @@ const checks = {
     routeAssetReadable: Boolean(route),
     appMainReadable: Boolean(appMain),
     navigateAssetReadable: Boolean(navigate),
-    routeHomeKind: Boolean(route && route.includes('e===`/`||e===`/Codex`||e===`/hotkey-window`')),
+    routeHomeKind: Boolean(route && route.includes('o===`/`||o===`/Codex`||o===`/hotkey-window`')),
     routeReactCopy: Boolean(appMain && appMain.includes('path:`/Codex`')),
     historyClickCurrentPanel: Boolean(
-        navigate && navigate.includes('if(s){o.dispatchMessage(`navigate-in-current-editor-tab`,{path:i});return}')
+        navigate && navigate.includes('if(s){i.dispatchMessage(`navigate-in-current-editor-tab`,{path:c});return}')
     ),
     historyUsesCurrentPanel: Boolean(
         historyBlock.includes('this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})')
     ),
     noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('o.dispose()')),
     panelIconPatch: Boolean(
-        out && out.includes('n.iconPath={light:Ie.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Ie.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n')
+        out && out.includes('n.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n')
     ),
     titleRouteBridge: Boolean(route && route.includes('codex-route-local-thread-title') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
-    noFallbackCodexAgentTitleWrite: Boolean(out && !out.includes('let a=Lee(e??f0),l=a.replace')),
+    noFallbackCodexAgentTitleWrite: Boolean(out && !out.includes('let a=Pue(e??Due),l=a.replace')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(e.url)')),
     codexHomeIpcSkip: Boolean(
         out && out.includes('(r==="panel"&&m0==="/Codex")||this.registerIpcClientForWebview(e)')
