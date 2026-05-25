@@ -279,9 +279,9 @@ function patchPanelLifecycle(extensionPath) {
         {
             id: 'panel-new-chat-route',
             file: extensionPath,
-            marker: 'WR("/Codex")',
+            marker: 'initialRoute:"/Codex"',
             transform(content) {
-                const replacement = 'async createNewPanel(){let e=WR("/Codex").with({query:"codexOpen="+Date.now()+"-"+Math.random().toString(36).slice(2)}),r=Oe.window.activeTextEditor?.viewColumn??Oe.ViewColumn.Active;await Oe.commands.executeCommand("vscode.openWith",e,t.customEditorViewType,{viewColumn:r,preserveFocus:!1,preview:!1})}';
+                const replacement = 'async createNewPanel(){let e=Oe.window.activeTextEditor?.viewColumn??Oe.ViewColumn.Active;await this.createEditorPanel({title:Due,initialRoute:"/Codex",viewColumn:e,preserveFocus:!1})}';
                 return replaceBetween(content, 'async createNewPanel(){', 'deliverMcpResponseToOrigin(', replacement);
             },
         },
