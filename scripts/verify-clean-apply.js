@@ -122,11 +122,11 @@ const checks = {
     ),
     noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('o.dispose()')),
     panelIconPatch: Boolean(
-        out && out.includes('n.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n')
+        out && out.includes('n.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n')
     ),
     titleRouteBridge: Boolean(route && route.includes('codex-route-local-thread-title') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
-    noFallbackCodexAgentTitleWrite: Boolean(out && !out.includes('let a=Pue(e??Due),l=a.replace')),
+    noFallbackCodexAgentTitleWrite: Boolean(out && !out.includes('let a=nfe(e??sfe),l=a.replace')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(e.url)')),
     codexHomeIpcSkip: Boolean(
         out && out.includes('(r==="panel"&&m0==="/Codex")||this.registerIpcClientForWebview(e)')
