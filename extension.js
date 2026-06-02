@@ -14,10 +14,10 @@ const ROUTE_TITLE_DOM_BRIDGE =
     'function T(e){try{let t=()=>{let t=[...document.querySelectorAll(`[data-thread-title],h1,[role=heading]`)].map(e=>({e,r:e.getBoundingClientRect()})).filter(({e:t,r:n})=>n.width>0&&n.height>0&&t.textContent).sort((e,t)=>e.r.top-t.r.top||e.r.left-t.r.left).map(({e})=>e.textContent.replace(/\\s+/g,` `).trim()).find(e=>e&&e!==`Codex`&&e!==`Codex Agent`&&e!==`Untitled`&&e.length<120);t&&P.dispatchMessage(`codex-route-local-thread-title`,{conversationId:e,title:t})};t(),[500,1500,4000,9000,2e4].forEach(e=>setTimeout(t,e)),globalThis.__codexNewTabTitleObserver?.disconnect?.(),globalThis.__codexNewTabTitleObserver=new MutationObserver(t),document.body&&globalThis.__codexNewTabTitleObserver.observe(document.body,{subtree:!0,childList:!0,characterData:!0})}catch{}}';
 
 const CURRENT_HISTORY_NAVIGATION_PATCH =
-    'case"navigate-in-new-editor-tab":{let n=r.path,o=/^\\/local\\/([^/]+)/.exec(n);if(o)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(o[1]),r=Pue(e?.preview??Due);r=r.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();n=`/local/${o[1]}/${r}`}catch{try{let e=(await this.previewLoader.fetchConversationPreviews()).get(o[1]);e&&(e=Pue(e).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),n=`/local/${o[1]}/${e}`)}catch{}}Oe.commands.executeCommand("vscode.open",WR(n));break}case"navigate-in-current-editor-tab":{let n=r.path,o=this.findPanelByWebview(e),i=/^\\/local\\/([^/]+)/.exec(n)?.[1],s=null,a=null;if(i)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(i);s=e?.preview??null,a=e?.modelProvider??null}catch(e){this.logger.error("Error fetching conversation summary",{safe:{error:e},sensitive:{}})}if(i&&s==null)try{s=(await this.previewLoader.fetchConversationPreviews()).get(i)??null}catch{}if(o&&i){o.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?Pue(s):null,l=(e??Due).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),c=WR(`/local/${i}/${l}`);e!=null&&(o.title=e);this.chatSessionItemProvider?.registerPendingConversation({conversationId:i,resource:c,label:s??void 0,modelProvider:a},{markInProgress:!1,onlyIfMissing:!0});this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else if(o){s!=null&&(o.title=Pue(s));this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else Oe.commands.executeCommand("vscode.open",WR(n));break}';
+    'case"navigate-in-new-editor-tab":{let n=r.path,o=/^\\/local\\/([^/]+)/.exec(n);if(o)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(o[1]),r=nfe(e?.preview??sfe);r=r.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();n=`/local/${o[1]}/${r}`}catch{try{let e=(await this.previewLoader.fetchConversationPreviews()).get(o[1]);e&&(e=nfe(e).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),n=`/local/${o[1]}/${e}`)}catch{}}Fe.commands.executeCommand("vscode.open",rC(n));break}case"navigate-in-current-editor-tab":{let n=r.path,o=this.findPanelByWebview(e),i=/^\\/local\\/([^/]+)/.exec(n)?.[1],s=null,a=null;if(i)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(i);s=e?.preview??null,a=e?.modelProvider??null}catch(e){this.logger.error("Error fetching conversation summary",{safe:{error:e},sensitive:{}})}if(i&&s==null)try{s=(await this.previewLoader.fetchConversationPreviews()).get(i)??null}catch{}if(o&&i){o.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?nfe(s):null,l=(e??sfe).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),c=rC(`/local/${i}/${l}`);e!=null&&(o.title=e);this.chatSessionItemProvider?.registerPendingConversation({conversationId:i,resource:c,label:s??void 0,modelProvider:a},{markInProgress:!1,onlyIfMissing:!0});this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else if(o){s!=null&&(o.title=nfe(s));this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else Fe.commands.executeCommand("vscode.open",rC(n));break}';
 
 const TITLE_HOST_HANDLER_PATCH =
-    `case"codex-route-local-thread":{let n=r.conversationId,o=this.findPanelByWebview(e);if(o&&typeof n=="string"){o.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let i=async()=>{let e=null,s=null;try{let{summary:r}=await this.conversationSummaryProvider.getConversationSummary(n);e=r?.preview??null,s=r?.modelProvider??null}catch{}if(e==null)try{e=(await this.previewLoader.fetchConversationPreviews()).get(n)??null}catch{}if(e!=null){let a=Pue(e),l=a.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();this.isPanelAlive(o)&&(o.title=a,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:WR(\`/local/\${n}/\${l}\`),label:e,modelProvider:s},{markInProgress:!1,onlyIfMissing:!0}))}};i(),[1500,5000,12000,30000].forEach(e=>setTimeout(i,e))}break}case"codex-route-local-thread-title":{let n=r.conversationId,o=r.title,i=this.findPanelByWebview(e);if(i&&typeof n=="string"&&typeof o=="string"){let s=Pue(o);if(s!==Due){let a=s.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();i.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")},i.title=s,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:WR(\`/local/\${n}/\${a}\`),label:o,modelProvider:null},{markInProgress:!1,onlyIfMissing:!0})}}break}case"local-thread-activity-changed":break;`;
+    `case"codex-route-local-thread":{let n=r.conversationId,o=this.findPanelByWebview(e);if(o&&typeof n=="string"){o.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let i=async()=>{let e=null,s=null;try{let{summary:r}=await this.conversationSummaryProvider.getConversationSummary(n);e=r?.preview??null,s=r?.modelProvider??null}catch{}if(e==null)try{e=(await this.previewLoader.fetchConversationPreviews()).get(n)??null}catch{}if(e!=null){let a=nfe(e),l=a.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();this.isPanelAlive(o)&&(o.title=a,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:rC(\`/local/\${n}/\${l}\`),label:e,modelProvider:s},{markInProgress:!1,onlyIfMissing:!0}))}};i(),[1500,5000,12000,30000].forEach(e=>setTimeout(i,e))}break}case"codex-route-local-thread-title":{let n=r.conversationId,o=r.title,i=this.findPanelByWebview(e);if(i&&typeof n=="string"&&typeof o=="string"){let s=nfe(o);if(s!==sfe){let a=s.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();i.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")},i.title=s,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:rC(\`/local/\${n}/\${a}\`),label:o,modelProvider:null},{markInProgress:!1,onlyIfMissing:!0})}}break}case"local-thread-activity-changed":break;`;
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,10 +190,13 @@ function patchRouteHome(assetsDir) {
                 const homeRoute = 'path:`/`,';
                 const idx = content.indexOf(homeRoute);
                 if (idx === -1) return content;
-                const searchStart = Math.max(0, idx - 40);
+                const searchStart = Math.max(0, idx - 60);
                 const before = content.substring(searchStart, idx);
-                const jsxOff = before.lastIndexOf('(0,$.jsx)(');
-                const nextSep = content.indexOf('),(0,$.jsx)(', idx);
+                const jsxMatch = before.match(/\(0,[A-Za-z_$]+\.jsx\)\(/g);
+                if (!jsxMatch) return content;
+                const jsxCall = jsxMatch[jsxMatch.length - 1];
+                const jsxOff = before.lastIndexOf(jsxCall);
+                const nextSep = content.indexOf('),' + jsxCall, idx);
                 if (jsxOff === -1 || nextSep === -1) return content;
                 const routeStart = searchStart + jsxOff;
                 const routeEnd = nextSep + 1;
@@ -237,7 +240,7 @@ function patchHistoryNavigation(assetsDir, extensionPath) {
         {
             id: 'history-host-current-panel',
             file: extensionPath,
-            marker: 'o.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?Pue(s):null',
+            marker: 'o.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?nfe(s):null',
             transform(content) {
                 return replaceBetween(content,
                     'case"navigate-in-new-editor-tab":',
@@ -245,7 +248,7 @@ function patchHistoryNavigation(assetsDir, extensionPath) {
                     CURRENT_HISTORY_NAVIGATION_PATCH);
             },
             verify(content) {
-                const marker = 'o.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?Pue(s):null';
+                const marker = 'o.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?nfe(s):null';
                 const start = content.indexOf('case"navigate-in-current-editor-tab"');
                 const block = start === -1 ? '' : content.slice(start, start + 1600);
                 return block.includes(marker)
@@ -266,7 +269,7 @@ function patchPanelLifecycle(extensionPath) {
             file: extensionPath,
             marker: '(r==="panel"&&m0==="/Codex")||this.registerIpcClientForWebview(e)',
             transform(content) {
-                const anchor = 'async initializeWebview(e,r,n){';
+                const anchor = 'async initializeWebview(e,r,n,o){';
                 const idx = content.indexOf(anchor);
                 if (idx === -1) return null;
                 const target = 'this.registerIpcClientForWebview(e)';
@@ -281,35 +284,35 @@ function patchPanelLifecycle(extensionPath) {
             file: extensionPath,
             marker: 'initialRoute:"/Codex"',
             transform(content) {
-                const replacement = 'async createNewPanel(){let e=Oe.window.activeTextEditor?.viewColumn??Oe.ViewColumn.Active;await this.createEditorPanel({title:Due,initialRoute:"/Codex",viewColumn:e,preserveFocus:!1})}';
+                const replacement = 'async createNewPanel(){let e=Fe.window.activeTextEditor?.viewColumn??Fe.ViewColumn.Active;await this.createEditorPanel({title:sfe,initialRoute:"/Codex",viewColumn:e,preserveFocus:!1})}';
                 return replaceBetween(content, 'async createNewPanel(){', 'deliverMcpResponseToOrigin(', replacement);
             },
         },
         {
             id: 'panel-create-editor-icon',
             file: extensionPath,
-            marker: 'n.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n',
+            marker: 'n.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n',
             transform(content) {
-                const anchor = 'Oe.window.createWebviewPanel(t.panelViewType,e?.title??Due,';
+                const anchor = 'Fe.window.createWebviewPanel(t.panelViewType,e?.title??sfe,';
                 const idx = content.indexOf(anchor);
                 if (idx === -1) return null;
                 const insertBefore = 'return this.editorPanels.set(n';
                 const insertIdx = content.indexOf(insertBefore, idx);
                 if (insertIdx === -1) return null;
-                const iconPath = 'n.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};';
+                const iconPath = 'n.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};';
                 return content.substring(0, insertIdx) + iconPath + content.substring(insertIdx);
             },
         },
         {
             id: 'custom-editor-icon-early',
             file: extensionPath,
-            marker: 'async resolveCustomEditor(e,r,n){r.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let o=jR(e.uri);',
+            marker: 'async resolveCustomEditor(e,r,n){r.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let o=tC(e.uri);',
             transform(content) {
                 const anchor = 'async resolveCustomEditor(e,r,n){';
                 const idx = content.indexOf(anchor);
                 if (idx === -1) return null;
                 const afterBrace = idx + anchor.length;
-                const iconAssign = 'r.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};';
+                const iconAssign = 'r.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};';
                 return content.substring(0, afterBrace) + iconAssign + content.substring(afterBrace);
             },
         },
@@ -319,16 +322,16 @@ function patchPanelLifecycle(extensionPath) {
             required: false,
             marker: null,
             transform(content) {
-                const anchor = 'r.title=Pue(s),r.iconPath={light:Oe.Uri.joinPath(this.extensionUri,';
+                const anchor = 'r.title=nfe(s),r.iconPath={light:Fe.Uri.joinPath(this.extensionUri,';
                 const idx = content.indexOf(anchor);
                 if (idx === -1) return null;
                 const endPattern = '},i!=null&&';
                 const endIdx = content.indexOf(endPattern, idx);
                 if (endIdx === -1) return null;
-                return content.substring(0, idx) + 'r.title=Pue(s),i!=null&&' + content.substring(endIdx + endPattern.length);
+                return content.substring(0, idx) + 'r.title=nfe(s),i!=null&&' + content.substring(endIdx + endPattern.length);
             },
             verify(content) {
-                return !content.includes('r.title=Pue(s),r.iconPath={light:Oe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg")');
+                return !content.includes('r.title=nfe(s),r.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg")');
             },
         },
     ]);
@@ -382,8 +385,8 @@ function patchTabTitles(assetsDir, extensionPath) {
             file: extensionPath,
             marker: 'routeLabel',
             transform(content) {
-                const replacement = 'function jR(t){let{scheme:e,authority:r,path:n}=t;if(e!==rp)return null;if(r!==oce)return null;let i=(n.startsWith("/")?n.slice(1):n).split("/"),s=null,a=null;if(i.length>=2&&(i[0]==="local"||i[0]==="remote")&&(s=i[1]),i.length>=3)try{a=decodeURIComponent(i.slice(2).join("/"))}catch{}return{path:t.fsPath,conversationId:s,routeLabel:a}}';
-                return replaceBetween(content, 'function jR(t){', 'function WR(t){', replacement);
+                const replacement = 'function tC(t){let{scheme:e,authority:r,path:n}=t;if(e!==Hp)return null;if(r!==vde)return null;let i=(n.startsWith("/")?n.slice(1):n).split("/"),s=null,a=null;if(i.length>=2&&(i[0]==="local"||i[0]==="remote")&&(s=i[1]),i.length>=3)try{a=decodeURIComponent(i.slice(2).join("/"))}catch{}return{path:t.fsPath,conversationId:s,routeLabel:a}}';
+                return replaceBetween(content, 'function tC(t){', 'function rC(t){', replacement);
             },
         },
         {
@@ -396,12 +399,12 @@ function patchTabTitles(assetsDir, extensionPath) {
         {
             id: 'host-title-route-label-preview-fallback',
             file: extensionPath,
-            marker: 'this.isPanelAlive(r)&&(r.title=Pue(l??s))',
+            marker: 'this.isPanelAlive(r)&&(r.title=nfe(l??s))',
             transform(content) {
-                const target = 'this.isPanelAlive(r)&&(r.title=Pue(l))';
+                const target = 'this.isPanelAlive(r)&&(r.title=nfe(l))';
                 const idx = content.indexOf(target);
                 if (idx === -1) return null;
-                return content.substring(0, idx) + 'this.isPanelAlive(r)&&(r.title=Pue(l??s))' + content.substring(idx + target.length);
+                return content.substring(0, idx) + 'this.isPanelAlive(r)&&(r.title=nfe(l??s))' + content.substring(idx + target.length);
             },
         },
         {
@@ -416,8 +419,8 @@ function patchTabTitles(assetsDir, extensionPath) {
             },
             verify(content) {
                 return content.includes('case"codex-route-local-thread-title":')
-                    && content.includes('if(e!=null){let a=Pue(e)')
-                    && !content.includes('let a=Pue(e??Due),l=a.replace');
+                    && content.includes('if(e!=null){let a=nfe(e)')
+                    && !content.includes('let a=nfe(e??sfe),l=a.replace');
             },
         },
     ]);
