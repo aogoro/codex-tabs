@@ -365,18 +365,22 @@ function patchTabTitles(assetsDir, extensionPath) {
             id: 'route-title-dom-bridge',
             file: routePath,
             marker: ROUTE_TITLE_DOM_BRIDGE,
-            old: 'var l=o(`RouteScope`,{key:e=>`${e.pathname}${e.search??``}`,parent:s,retain:{max:20}});',
-            new: `${ROUTE_TITLE_DOM_BRIDGE}var l=o(\`RouteScope\`,{key:e=>\`\${e.pathname}\${e.search??\`\`}\`,parent:s,retain:{max:20}});`,
+            transform(content) {
+                const re = /var l=[a-z]\(`RouteScope`,\{key:e=>`\$\{e\.pathname\}\$\{e\.search\?\?``\}`,parent:[a-z],retain:\{max:20\}\}\);/;
+                const m = re.exec(content);
+                if (!m) return null;
+                return content.substring(0, m.index) + ROUTE_TITLE_DOM_BRIDGE + content.substring(m.index);
+            },
         },
         {
             id: 'route-title-dispatch-on-local-thread',
             file: routePath,
             marker: 'P.dispatchMessage(`codex-route-local-thread`,{conversationId:t})),T(t)',
             transform(content) {
-                const blockStart = 'if(u!=null){let e=new URLSearchParams(l),t=e.get(`projectId`),n=e.get(`hostId`);return{conversationId:a(u),pathname:o,projectContext:t==null?null:{hostId:n,projectId:t},routeKind:`local-thread`,routeTemplate:s,search:l}}';
+                const blockStart = 'if(u!=null){let e=new URLSearchParams(l),n=e.get(`projectId`),r=e.get(`hostId`);return{conversationId:t(u),pathname:o,projectContext:n==null?null:{hostId:r,projectId:n},routeKind:`local-thread`,routeTemplate:s,search:l}}';
                 const idx = content.indexOf(blockStart);
                 if (idx === -1) return null;
-                const replacement = 'if(u!=null){let t=a(u);try{globalThis.__codexNewTabRouteConversationId!==t&&(globalThis.__codexNewTabRouteConversationId=t,P.dispatchMessage(`codex-route-local-thread`,{conversationId:t})),T(t)}catch{}let e=new URLSearchParams(l),n=e.get(`projectId`),i=e.get(`hostId`);return{conversationId:t,pathname:o,projectContext:n==null?null:{hostId:i,projectId:n},routeKind:`local-thread`,routeTemplate:s,search:l}}';
+                const replacement = 'if(u!=null){let e=t(u);try{globalThis.__codexNewTabRouteConversationId!==e&&(globalThis.__codexNewTabRouteConversationId=e,P.dispatchMessage(`codex-route-local-thread`,{conversationId:e})),T(e)}catch{}let n=new URLSearchParams(l),r=n.get(`projectId`),i=n.get(`hostId`);return{conversationId:e,pathname:o,projectContext:r==null?null:{hostId:i,projectId:r},routeKind:`local-thread`,routeTemplate:s,search:l}}';
                 return content.replace(blockStart, replacement);
             },
         },
