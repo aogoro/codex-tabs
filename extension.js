@@ -375,7 +375,7 @@ function patchTabTitles(assetsDir, extensionPath) {
         {
             id: 'route-title-dispatch-on-local-thread',
             file: routePath,
-            marker: 'P.dispatchMessage(`codex-route-local-thread`,{conversationId:t})),T(t)',
+            marker: 'P.dispatchMessage(`codex-route-local-thread`,{conversationId:e})),T(e)',
             transform(content) {
                 const blockStart = 'if(u!=null){let e=new URLSearchParams(l),n=e.get(`projectId`),r=e.get(`hostId`);return{conversationId:t(u),pathname:o,projectContext:n==null?null:{hostId:r,projectId:n},routeKind:`local-thread`,routeTemplate:s,search:l}}';
                 const idx = content.indexOf(blockStart);
