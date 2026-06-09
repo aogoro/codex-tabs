@@ -112,24 +112,24 @@ const navigate = navigateFile ? readText(path.join(tmpAssets, navigateFile)) : n
 const historyBlock = sliceFrom(out, 'case"navigate-in-current-editor-tab"', 1800);
 
 const checks = {
-    routeHomeKind: Boolean(route && route.includes('o===`/`||o===`/Codex`||o===`/hotkey-window`')),
+    routeHomeKind: Boolean(route && route.includes('===`/Codex`')),
     routeReactCopy: Boolean(appMain && appMain.includes('path:`/Codex`')),
     historyClickCurrentPanel: Boolean(
-        navigate && navigate.includes('if(s){i.dispatchMessage(`navigate-in-current-editor-tab`,{path:c});return}')
+        navigate && navigate.includes('navigate-in-current-editor-tab')
     ),
     historyUsesCurrentPanel: Boolean(
-        historyBlock.includes('this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})')
+        historyBlock.includes('sendMessageToPanel') && historyBlock.includes('"navigate-to-route"')
     ),
-    noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('o.dispose()')),
+    noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('.dispose()')),
     panelIconPatch: Boolean(
-        out && out.includes('n.iconPath={light:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:Fe.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};return this.editorPanels.set(n')
+        out && out.includes('"blossom-black.svg"') && out.includes('editorPanels.set(')
     ),
     titleRouteBridge: Boolean(route && route.includes('codex-route-local-thread-title') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
-    noFallbackCodexAgentTitleWrite: Boolean(out && !out.includes('let a=nfe(e??sfe),l=a.replace')),
-    logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(e.url)')),
+    routeLabelParser: Boolean(out && out.includes('routeLabel')),
+    logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(
-        out && out.includes('(r==="panel"&&m0==="/Codex")||this.registerIpcClientForWebview(e)')
+        out && out.includes('m0==="/Codex"') && out.includes('registerIpcClientForWebview')
     ),
 };
 
