@@ -44,6 +44,22 @@ function findFileByPrefix(dir, prefix, ext) {
     }
 }
 
+function findAssetByContent(assetsDir, ...needles) {
+    try {
+        for (const file of fs.readdirSync(assetsDir)) {
+            if (!file.endsWith('.js')) continue;
+            const c = fs.readFileSync(path.join(assetsDir, file), 'utf8');
+            if (needles.every((n) => c.includes(n))) return file;
+        }
+    } catch (_) {}
+    return null;
+}
+
+function findRouteAssetFile(assetsDir) {
+    return findAssetByContent(assetsDir, '`RouteScope`,{key:', 'routeKind:`home`')
+        || findFileByPrefix(assetsDir, 'route-scope-', '.js');
+}
+
 function sliceFrom(content, needle, length) {
     if (!content) return '';
     const index = content.indexOf(needle);
@@ -52,7 +68,7 @@ function sliceFrom(content, needle, length) {
 
 const codexDir = findCodexExtDir();
 const assetsDir = codexDir ? path.join(codexDir, 'webview', 'assets') : null;
-const routeFile = assetsDir ? findFileByPrefix(assetsDir, 'route-scope-', '.js') : null;
+const routeFile = assetsDir ? findRouteAssetFile(assetsDir) : null;
 const appMainFile = assetsDir ? findFileByPrefix(assetsDir, 'app-main-', '.js') : null;
 const navigateFile = assetsDir ? findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js') : null;
 

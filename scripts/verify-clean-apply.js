@@ -26,6 +26,22 @@ function findFileByPrefix(dir, prefix, ext) {
     }
 }
 
+function findAssetByContent(assetsDir, ...needles) {
+    try {
+        for (const f of fs.readdirSync(assetsDir)) {
+            if (!f.endsWith('.js')) continue;
+            const c = fs.readFileSync(path.join(assetsDir, f), 'utf8');
+            if (needles.every((n) => c.includes(n))) return f;
+        }
+    } catch (_) {}
+    return null;
+}
+
+function findRouteAssetFile(assetsDir) {
+    return findAssetByContent(assetsDir, '`RouteScope`,{key:', 'routeKind:`home`')
+        || findFileByPrefix(assetsDir, 'route-scope-', '.js');
+}
+
 function readText(file) {
     try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; }
 }
@@ -45,7 +61,7 @@ if (!codexDir) {
 const assetsDir = path.join(codexDir, 'webview', 'assets');
 const outBak = path.join(codexDir, 'out', 'extension.js.bak');
 
-const routeFile = findFileByPrefix(assetsDir, 'route-scope-', '.js');
+const routeFile = findRouteAssetFile(assetsDir);
 const appMainFile = findFileByPrefix(assetsDir, 'app-main-', '.js');
 const navigateFile = findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js');
 

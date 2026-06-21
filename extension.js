@@ -11,7 +11,7 @@ const TRANSPARENT_PNG_BASE64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 const ROUTE_TITLE_DOM_BRIDGE =
-    'function T(e){try{let t=()=>{let t=[...document.querySelectorAll(`[data-thread-title],h1,[role=heading]`)].map(e=>({e,r:e.getBoundingClientRect()})).filter(({e:t,r:n})=>n.width>0&&n.height>0&&t.textContent).sort((e,t)=>e.r.top-t.r.top||e.r.left-t.r.left).map(({e})=>e.textContent.replace(/\\s+/g,` `).trim()).find(e=>e&&e!==`Codex`&&e!==`Codex Agent`&&e!==`Untitled`&&e.length<120);t&&P.dispatchMessage(`codex-route-local-thread-title`,{conversationId:e,title:t})};t(),[500,1500,4000,9000,2e4].forEach(e=>setTimeout(t,e)),globalThis.__codexNewTabTitleObserver?.disconnect?.(),globalThis.__codexNewTabTitleObserver=new MutationObserver(t),document.body&&globalThis.__codexNewTabTitleObserver.observe(document.body,{subtree:!0,childList:!0,characterData:!0})}catch{}}';
+    'function T(e){try{let t=()=>{let t=[...document.querySelectorAll(`[data-thread-title],h1,[role=heading]`)].map(e=>({e,r:e.getBoundingClientRect()})).filter(({e:t,r:n})=>n.width>0&&n.height>0&&t.textContent).sort((e,t)=>e.r.top-t.r.top||e.r.left-t.r.left).map(({e})=>e.textContent.replace(/\\s+/g,` `).trim()).find(e=>e&&e!==`Codex`&&e!==`Codex Agent`&&e!==`Untitled`&&e.length<120);t&&Pcdx.dispatchMessage(`codex-route-local-thread-title`,{conversationId:e,title:t})};t(),[500,1500,4000,9000,2e4].forEach(e=>setTimeout(t,e)),globalThis.__codexNewTabTitleObserver?.disconnect?.(),globalThis.__codexNewTabTitleObserver=new MutationObserver(t),document.body&&globalThis.__codexNewTabTitleObserver.observe(document.body,{subtree:!0,childList:!0,characterData:!0})}catch{}}';
 
 const HISTORY_PATCH_TEMPLATE =
     'case"navigate-in-new-editor-tab":{let n=r.path,o=/^\\/local\\/([^/]+)/.exec(n);if(o)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(o[1]),r=__TITLE_FN__(e?.preview??__TITLE_DEFAULT__);r=r.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();n=`/local/${o[1]}/${r}`}catch{try{let e=(await this.previewLoader.fetchConversationPreviews()).get(o[1]);e&&(e=__TITLE_FN__(e).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),n=`/local/${o[1]}/${e}`)}catch{}}__NS__.commands.executeCommand("vscode.open",__URI_FN__(n));break}case"navigate-in-current-editor-tab":{let n=r.path,o=this.findPanelByWebview(e),i=/^\\/local\\/([^/]+)/.exec(n)?.[1],s=null,a=null;if(i)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(i);s=e?.preview??null,a=e?.modelProvider??null}catch(e){this.logger.error("Error fetching conversation summary",{safe:{error:e},sensitive:{}})}if(i&&s==null)try{s=(await this.previewLoader.fetchConversationPreviews()).get(i)??null}catch{}if(o&&i){o.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?__TITLE_FN__(s):null,l=(e??__TITLE_DEFAULT__).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),c=__URI_FN__(`/local/${i}/${l}`);e!=null&&(o.title=e);this.chatSessionItemProvider?.registerPendingConversation({conversationId:i,resource:c,label:s??void 0,modelProvider:a},{markInProgress:!1,onlyIfMissing:!0});this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else if(o){s!=null&&(o.title=__TITLE_FN__(s));this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else __NS__.commands.executeCommand("vscode.open",__URI_FN__(n));break}';
@@ -139,6 +139,26 @@ function findFileByPrefix(dir, prefix, ext) {
     }
 }
 
+function findAssetByContent(assetsDir, ...needles) {
+    try {
+        for (const f of fs.readdirSync(assetsDir)) {
+            if (!f.endsWith('.js')) continue;
+            const c = fs.readFileSync(path.join(assetsDir, f), 'utf8');
+            if (needles.every((n) => c.includes(n))) return f;
+        }
+    } catch (_) {}
+    return null;
+}
+
+// The webview route module (RouteScope atom + route resolution) is the patch
+// target for route-home and title patches. Codex renames/splits its assets on
+// every rebuild, so locate it by content rather than filename prefix. The
+// legacy `route-scope-` prefix is kept as a fallback for older builds.
+function findRouteAssetFile(assetsDir) {
+    return findAssetByContent(assetsDir, '`RouteScope`,{key:', 'routeKind:`home`')
+        || findFileByPrefix(assetsDir, 'route-scope-', '.js');
+}
+
 function backupFile(filePath) {
     const bak = filePath + '.bak';
     if (!fs.existsSync(bak)) fs.copyFileSync(filePath, bak);
@@ -221,7 +241,7 @@ function applyPatchGroup(patches) {
 // --- Patches ---
 
 function patchRouteHome(assetsDir) {
-    const routeFile = findFileByPrefix(assetsDir, 'route-scope-', '.js');
+    const routeFile = findRouteAssetFile(assetsDir);
     const appMainFile = findFileByPrefix(assetsDir, 'app-main-', '.js');
     const routePath = routeFile ? path.join(assetsDir, routeFile) : null;
     const appMainPath = appMainFile ? path.join(assetsDir, appMainFile) : null;
@@ -420,7 +440,7 @@ function patchPanelLifecycle(extensionPath, ids) {
 }
 
 function patchTabTitles(assetsDir, extensionPath, ids) {
-    const routeFile = findFileByPrefix(assetsDir, 'route-scope-', '.js');
+    const routeFile = findRouteAssetFile(assetsDir);
     const routePath = routeFile ? path.join(assetsDir, routeFile) : null;
 
     const navigateFile = findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js');
@@ -438,23 +458,23 @@ function patchTabTitles(assetsDir, extensionPath, ids) {
             file: routePath,
             marker: null,
             verify(content) {
-                return content.includes(' as P}from"./');
+                return content.includes(' as Pcdx}from"./');
             },
             transform(content) {
                 if (!dispatcherInfo) return null;
                 const { exportName, module: mod } = dispatcherInfo;
-                if (content.includes(` as P}from"./${mod}"`)) return null;
+                if (content.includes(` as Pcdx}from"./${mod}"`)) return null;
                 const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 const importRe = new RegExp(String.raw`import\{([^}]+)\}from"\.\/` + escaped + '"');
                 const m = importRe.exec(content);
                 if (m) {
-                    const patched = m[0].replace('}from"', `,${exportName} as P}from"`);
+                    const patched = m[0].replace('}from"', `,${exportName} as Pcdx}from"`);
                     return content.replace(m[0], patched);
                 }
                 const firstImport = content.indexOf('import');
                 if (firstImport === -1) return null;
                 return content.substring(0, firstImport) +
-                    `import{${exportName} as P}from"./${mod}";` +
+                    `import{${exportName} as Pcdx}from"./${mod}";` +
                     content.substring(firstImport);
             },
         },
@@ -474,12 +494,16 @@ function patchTabTitles(assetsDir, extensionPath, ids) {
             file: routePath,
             marker: 'codex-route-local-thread',
             transform(content) {
-                const blockRe = /if\((\w+)!=null\)\{let (\w+)=new URLSearchParams\((\w+)\),(\w+)=\2\.get\(`projectId`\),(\w+)=\2\.get\(`hostId`\);return\{conversationId:(\w+)\(\1\),pathname:(\w+),projectContext:\4==null\?null:\{hostId:\5,projectId:\4\},routeKind:`local-thread`,routeTemplate:(\w+),search:\3\}\}/;
+                // Codex 26.616 extracted the URLSearchParams parsing into a
+                // module-level helper, so the local-thread route now reads:
+                //   if(l!=null){let e=P(a);return{conversationId:c(l),pathname:n,
+                //   projectContext:e,routeKind:`local-thread`,routeTemplate:r,search:a}}
+                const blockRe = /if\((\w+)!=null\)\{let (\w+)=(\w+)\((\w+)\);return\{conversationId:(\w+)\(\1\),pathname:(\w+),projectContext:\2,routeKind:`local-thread`,routeTemplate:(\w+),search:\4\}\}/;
                 const m = blockRe.exec(content);
                 if (!m) return null;
-                const [full, rawId, , searchVar, , , convFn, pathVar, tmplVar] = m;
+                const [full, rawId, , pcFn, searchVar, convFn, pathVar, tmplVar] = m;
                 const replacement =
-                    `if(${rawId}!=null){let __cv=${convFn}(${rawId});try{globalThis.__codexNewTabRouteConversationId!==__cv&&(globalThis.__codexNewTabRouteConversationId=__cv,P.dispatchMessage(\`codex-route-local-thread\`,{conversationId:__cv})),T(__cv)}catch{}let __sp=new URLSearchParams(${searchVar}),__pj=__sp.get(\`projectId\`),__hi=__sp.get(\`hostId\`);return{conversationId:__cv,pathname:${pathVar},projectContext:__pj==null?null:{hostId:__hi,projectId:__pj},routeKind:\`local-thread\`,routeTemplate:${tmplVar},search:${searchVar}}}`;
+                    `if(${rawId}!=null){let __cv=${convFn}(${rawId});try{globalThis.__codexNewTabRouteConversationId!==__cv&&(globalThis.__codexNewTabRouteConversationId=__cv,Pcdx.dispatchMessage(\`codex-route-local-thread\`,{conversationId:__cv})),T(__cv)}catch{}return{conversationId:__cv,pathname:${pathVar},projectContext:${pcFn}(${searchVar}),routeKind:\`local-thread\`,routeTemplate:${tmplVar},search:${searchVar}}}`;
                 return content.replace(full, replacement);
             },
         },
