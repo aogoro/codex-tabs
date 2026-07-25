@@ -144,10 +144,12 @@ const checks = {
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
-    codexHomeIpcSkip: Boolean(
-        out && out.includes('m0==="/Codex"')
-        && (out.includes('registerClientCoordinationForWebview') || out.includes('registerIpcClientForWebview'))
-    ),
+    codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
+    // A patch that renders the webview inert still passes every marker check —
+    // this one failed silently once. The webview only gets its services from
+    // the client-coordination registration in initializeWebview, so that call
+    // must stay unconditional.
+    hostAppViewIntact: /async initializeWebview\([^)]*\)\{this\.register(?:ClientCoordinationForWebview|IpcClientForWebview)\(/.test(out || ''),
 };
 
 // Marker checks only prove the text landed; parse the results to prove the

@@ -301,13 +301,6 @@ function patchHistoryNavigation(assetsDir, extensionPath, ids, report) {
 }
 
 function patchPanelLifecycle(extensionPath, ids, report) {
-    const initParams = parseParams(
-        fs.readFileSync(extensionPath, 'utf8'),
-        'async initializeWebview'
-    );
-    const webviewParam = initParams ? initParams[0] : 'e';
-    const modeParam = initParams ? initParams[1] : 'r';
-
     const resolveParams = parseParams(
         fs.readFileSync(extensionPath, 'utf8'),
         'async resolveCustomEditor'
@@ -318,22 +311,28 @@ function patchPanelLifecycle(extensionPath, ids, report) {
 
     return applyPatchGroup([
         {
+            // A /Codex home panel must not register the thread-follower IPC
+            // handlers — it would compete with the panel that actually owns the
+            // active thread. Only those handlers are skipped: everything else
+            // in the client-coordination session (notably the app host session
+            // that gives the webview its services) must stay, or the panel
+            // renders an empty shell.
             id: 'panel-codex-home-ipc-skip',
             file: extensionPath,
-            marker: 'm0==="/Codex"',
+            required: false,
+            marker: '__codexHomeNoFollower',
             transform(content) {
-                const anchor = `async initializeWebview(${initParams ? initParams.join(',') : 'e,r,n,o'}){`;
-                const idx = content.indexOf(anchor);
-                if (idx === -1) return null;
-                // Codex 26.721 renamed registerIpcClientForWebview to
-                // registerClientCoordinationForWebview and gave it a second argument.
-                const callRe = /this\.register(?:IpcClientForWebview|ClientCoordinationForWebview)\([^)]*\)/;
-                const slice = content.slice(idx, idx + 320);
-                const m = callRe.exec(slice);
+                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:([\w$]+),viewService:([\w$]+)\.services\.clientCoordination\}\)/;
+                const m = re.exec(content);
                 if (!m) return null;
-                const tIdx = idx + m.index;
-                const conditional = `let p0=this.findPanelByWebview(${webviewParam}),m0=p0?this.editorPanels.get(p0)?.initialRoute:null;(${modeParam}==="panel"&&m0==="/Codex")||${m[0]}`;
-                return content.substring(0, tIdx) + conditional + content.substring(tIdx + m[0].length);
+                const [full, resultVar, followerFn, ipcVar, appViewVar] = m;
+                const sessionParams = parseParams(content, 'createClientCoordinationSession');
+                const webviewVar = sessionParams ? sessionParams[0] : 'e';
+                const replacement =
+                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:`
+                    + `${followerFn}({hostId:"local",ipcClient:${ipcVar},viewService:${appViewVar}.services.clientCoordination}))`
+                    + `(this.editorPanels.get(this.findPanelByWebview(${webviewVar}))?.initialRoute==="/Codex")`;
+                return replaceLiteral(content, full, replacement);
             },
         },
         {
@@ -588,6 +587,10 @@ function activate(context) {
                     vscode.commands.executeCommand('workbench.action.reloadWindow');
                 }
             });
+        } else {
+            // Nothing to write means the install is already patched. Say so in
+            // the log — silence here reads as "the extension did nothing".
+            console.log(`[codex-new-tab] patches already applied (Codex ${codexVersion || 'unknown'})`);
         }
         if (skipped.length > 0) {
             for (const s of skipped) {

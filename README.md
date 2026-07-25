@@ -78,9 +78,12 @@ If an update changes the internal structure, re-anchor the patches:
 ```bash
 node scripts/verify-clean-apply.js   # dry-run on copies; names the failing patch and validates syntax
 node scripts/verify-installed.js     # state of the real installation
+node scripts/restore-backups.js      # roll back to stock Codex from the .bak files
 ```
 
-`verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. To roll back the installation, restore the `.bak` files next to the patched ones.
+`verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. Iterate with `restore-backups.js` + reload, since patches only apply to unpatched files.
+
+Both verify scripts check for markers, which proves a patch was written — not that Codex still works. After re-anchoring, always open a Codex tab and confirm the UI actually renders.
 
 ## Third-party assets
 

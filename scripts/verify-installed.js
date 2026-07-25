@@ -73,10 +73,8 @@ const checks = {
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
-    codexHomeIpcSkip: Boolean(
-        out && out.includes('m0==="/Codex"')
-        && (out.includes('registerClientCoordinationForWebview') || out.includes('registerIpcClientForWebview'))
-    ),
+    codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
+    hostAppViewIntact: /async initializeWebview\([^)]*\)\{this\.register(?:ClientCoordinationForWebview|IpcClientForWebview)\(/.test(out || ''),
 };
 
 const failed = Object.entries(checks)
