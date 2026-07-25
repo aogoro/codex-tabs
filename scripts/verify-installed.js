@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 
 const pkg = require('../package.json');
+const targets = require('../lib/targets');
 const SOURCE_WRAPPER = path.resolve(__dirname, '..', 'extension.js');
 const INSTALLED_WRAPPER = path.join(
     os.homedir(),
@@ -22,66 +23,28 @@ function readText(file) {
     }
 }
 
-function findCodexExtDir() {
-    const extRoot = path.join(os.homedir(), '.cursor', 'extensions');
-    try {
-        const dirs = fs.readdirSync(extRoot)
-            .filter((entry) => entry.startsWith('openai.chatgpt-'))
-            .map((entry) => path.join(extRoot, entry))
-            .filter((entry) => fs.statSync(entry).isDirectory())
-            .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-        return dirs.length > 0 ? dirs[0] : null;
-    } catch (_) {
-        return null;
-    }
-}
-
-function findFileByPrefix(dir, prefix, ext) {
-    try {
-        return fs.readdirSync(dir).find((file) => file.startsWith(prefix) && file.endsWith(ext)) || null;
-    } catch (_) {
-        return null;
-    }
-}
-
-function findAssetByContent(assetsDir, ...needles) {
-    try {
-        for (const file of fs.readdirSync(assetsDir)) {
-            if (!file.endsWith('.js')) continue;
-            const c = fs.readFileSync(path.join(assetsDir, file), 'utf8');
-            if (needles.every((n) => c.includes(n))) return file;
-        }
-    } catch (_) {}
-    return null;
-}
-
-function findRouteAssetFile(assetsDir) {
-    return findAssetByContent(assetsDir, '`RouteScope`,{key:', 'routeKind:`home`')
-        || findFileByPrefix(assetsDir, 'route-scope-', '.js');
-}
-
 function sliceFrom(content, needle, length) {
     if (!content) return '';
     const index = content.indexOf(needle);
     return index === -1 ? '' : content.slice(index, index + length);
 }
 
-const codexDir = findCodexExtDir();
+const codexDir = targets.findCodexExtDir();
 const assetsDir = codexDir ? path.join(codexDir, 'webview', 'assets') : null;
-const routeFile = assetsDir ? findRouteAssetFile(assetsDir) : null;
-const appMainFile = assetsDir ? findFileByPrefix(assetsDir, 'app-main-', '.js') : null;
-const navigateFile = assetsDir ? findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js') : null;
+const routeFile = assetsDir ? targets.findRouteAssetFile(assetsDir) : null;
+const routeTableFile = assetsDir ? targets.findRouteTableFile(assetsDir) : null;
+const navigateFile = assetsDir ? targets.findNavigateFile(assetsDir) : null;
 
 const outPath = codexDir ? path.join(codexDir, 'out', 'extension.js') : null;
 const routePath = routeFile ? path.join(assetsDir, routeFile) : null;
-const appMainPath = appMainFile ? path.join(assetsDir, appMainFile) : null;
+const routeTablePath = routeTableFile ? path.join(assetsDir, routeTableFile) : null;
 const navigatePath = navigateFile ? path.join(assetsDir, navigateFile) : null;
 
 const sourceWrapper = readText(SOURCE_WRAPPER);
 const installedWrapper = readText(INSTALLED_WRAPPER);
 const out = readText(outPath);
 const route = readText(routePath);
-const appMain = readText(appMainPath);
+const routeTable = readText(routeTablePath);
 const navigate = readText(navigatePath);
 const historyBlock = sliceFrom(out, 'case"navigate-in-current-editor-tab"', 1800);
 
@@ -92,10 +55,10 @@ const checks = {
     wrapperSynced: Boolean(sourceWrapper && installedWrapper && sourceWrapper === installedWrapper),
     outReadable: Boolean(out),
     routeAssetReadable: Boolean(route),
-    appMainReadable: Boolean(appMain),
+    routeTableReadable: Boolean(routeTable),
     navigateAssetReadable: Boolean(navigate),
     routeHomeKind: Boolean(route && route.includes('===`/Codex`')),
-    routeReactCopy: Boolean(appMain && appMain.includes('path:`/Codex`')),
+    routeReactCopy: Boolean(routeTable && routeTable.includes('path:`/Codex`')),
     historyClickCurrentPanel: Boolean(
         navigate && navigate.includes('navigate-in-current-editor-tab')
     ),
@@ -106,12 +69,13 @@ const checks = {
     panelIconPatch: Boolean(
         out && out.includes('"blossom-black.svg"') && out.includes('editorPanels.set(')
     ),
-    titleRouteBridge: Boolean(route && route.includes('codex-route-local-thread-title') && route.includes('MutationObserver')),
+    titleRouteBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(
-        out && out.includes('m0==="/Codex"') && out.includes('registerIpcClientForWebview')
+        out && out.includes('m0==="/Codex"')
+        && (out.includes('registerClientCoordinationForWebview') || out.includes('registerIpcClientForWebview'))
     ),
 };
 
@@ -127,7 +91,7 @@ console.log(JSON.stringify({
         installedWrapper: INSTALLED_WRAPPER,
         out: outPath,
         route: routePath,
-        appMain: appMainPath,
+        routeTable: routeTablePath,
         navigate: navigatePath,
     },
     checks,
