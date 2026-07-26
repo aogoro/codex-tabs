@@ -1,7 +1,7 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const targets = require('./lib/targets');
 
 const CODEX_CUSTOM_EDITOR = 'chatgpt.conversationEditor';
 const RESTORE_DELAY_MS = 700;
@@ -10,14 +10,18 @@ const PATCH_MARKER = 'path:`/Codex`';
 const TRANSPARENT_PNG_BASE64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
+// Defined lazily at the local-thread route site, where the webview message
+// dispatcher (__DISPATCH__) is guaranteed to be in scope — the bundle wraps
+// modules in lazy initializers, so a file-level insert would land in the wrong
+// closure.
 const ROUTE_TITLE_DOM_BRIDGE =
-    'function T(e){try{let t=()=>{let t=[...document.querySelectorAll(`[data-thread-title],h1,[role=heading]`)].map(e=>({e,r:e.getBoundingClientRect()})).filter(({e:t,r:n})=>n.width>0&&n.height>0&&t.textContent).sort((e,t)=>e.r.top-t.r.top||e.r.left-t.r.left).map(({e})=>e.textContent.replace(/\\s+/g,` `).trim()).find(e=>e&&e!==`Codex`&&e!==`Codex Agent`&&e!==`Untitled`&&e.length<120);t&&Pcdx.dispatchMessage(`codex-route-local-thread-title`,{conversationId:e,title:t})};t(),[500,1500,4000,9000,2e4].forEach(e=>setTimeout(t,e)),globalThis.__codexNewTabTitleObserver?.disconnect?.(),globalThis.__codexNewTabTitleObserver=new MutationObserver(t),document.body&&globalThis.__codexNewTabTitleObserver.observe(document.body,{subtree:!0,childList:!0,characterData:!0})}catch{}}';
+    'globalThis.__codexNewTabTitleBridge||(globalThis.__codexNewTabTitleBridge=function(e){try{let t=()=>{let t=[...document.querySelectorAll(`[data-thread-title],h1,[role=heading]`)].map(e=>({e,r:e.getBoundingClientRect()})).filter(({e:t,r:n})=>n.width>0&&n.height>0&&t.textContent).sort((e,t)=>e.r.top-t.r.top||e.r.left-t.r.left).map(({e})=>e.textContent.replace(/\\s+/g,` `).trim()).find(e=>e&&e!==`Codex`&&e!==`Codex Agent`&&e!==`Untitled`&&e.length<120);t&&__DISPATCH__.dispatchMessage(`codex-route-local-thread-title`,{conversationId:e,title:t})};t(),[500,1500,4000,9000,2e4].forEach(e=>setTimeout(t,e)),globalThis.__codexNewTabTitleObserver?.disconnect?.(),globalThis.__codexNewTabTitleObserver=new MutationObserver(t),document.body&&globalThis.__codexNewTabTitleObserver.observe(document.body,{subtree:!0,childList:!0,characterData:!0})}catch{}});';
 
 const HISTORY_PATCH_TEMPLATE =
     'case"navigate-in-new-editor-tab":{let n=r.path,o=/^\\/local\\/([^/]+)/.exec(n);if(o)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(o[1]),r=__TITLE_FN__(e?.preview??__TITLE_DEFAULT__);r=r.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();n=`/local/${o[1]}/${r}`}catch{try{let e=(await this.previewLoader.fetchConversationPreviews()).get(o[1]);e&&(e=__TITLE_FN__(e).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),n=`/local/${o[1]}/${e}`)}catch{}}__NS__.commands.executeCommand("vscode.open",__URI_FN__(n));break}case"navigate-in-current-editor-tab":{let n=r.path,o=this.findPanelByWebview(e),i=/^\\/local\\/([^/]+)/.exec(n)?.[1],s=null,a=null;if(i)try{let{summary:e}=await this.conversationSummaryProvider.getConversationSummary(i);s=e?.preview??null,a=e?.modelProvider??null}catch(e){this.logger.error("Error fetching conversation summary",{safe:{error:e},sensitive:{}})}if(i&&s==null)try{s=(await this.previewLoader.fetchConversationPreviews()).get(i)??null}catch{}if(o&&i){o.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let e=s!=null?__TITLE_FN__(s):null,l=(e??__TITLE_DEFAULT__).replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim(),c=__URI_FN__(`/local/${i}/${l}`);e!=null&&(o.title=e);this.chatSessionItemProvider?.registerPendingConversation({conversationId:i,resource:c,label:s??void 0,modelProvider:a},{markInProgress:!1,onlyIfMissing:!0});this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else if(o){s!=null&&(o.title=__TITLE_FN__(s));this.sendMessageToPanel(o,{type:"navigate-to-route",path:n,state:r.state})}else __NS__.commands.executeCommand("vscode.open",__URI_FN__(n));break}';
 
 const TITLE_PATCH_TEMPLATE =
-    'case"codex-route-local-thread":{let n=r.conversationId,o=this.findPanelByWebview(e);if(o&&typeof n=="string"){o.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let i=async()=>{let e=null,s=null;try{let{summary:r}=await this.conversationSummaryProvider.getConversationSummary(n);e=r?.preview??null,s=r?.modelProvider??null}catch{}if(e==null)try{e=(await this.previewLoader.fetchConversationPreviews()).get(n)??null}catch{}if(e!=null){let a=__TITLE_FN__(e),l=a.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();this.isPanelAlive(o)&&(o.title=a,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:__URI_FN__(`/local/${n}/${l}`),label:e,modelProvider:s},{markInProgress:!1,onlyIfMissing:!0}))}};i(),[1500,5000,12000,30000].forEach(e=>setTimeout(i,e))}break}case"codex-route-local-thread-title":{let n=r.conversationId,o=r.title,i=this.findPanelByWebview(e);if(i&&typeof n=="string"&&typeof o=="string"){let s=__TITLE_FN__(o);if(s!==__TITLE_DEFAULT__){let a=s.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();i.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")},i.title=s,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:__URI_FN__(`/local/${n}/${a}`),label:o,modelProvider:null},{markInProgress:!1,onlyIfMissing:!0})}}break}case"local-thread-activity-changed":break;';
+    'case"codex-route-local-thread":{let n=r.conversationId,o=this.findPanelByWebview(e);if(o&&typeof n=="string"){o.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")};let i=async()=>{let e=null,s=null;try{let{summary:r}=await this.conversationSummaryProvider.getConversationSummary(n);e=r?.preview??null,s=r?.modelProvider??null}catch{}if(e==null)try{e=(await this.previewLoader.fetchConversationPreviews()).get(n)??null}catch{}if(e!=null){let a=__TITLE_FN__(e),l=a.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();this.isPanelAlive(o)&&(o.title=a,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:__URI_FN__(`/local/${n}/${l}`),label:e,modelProvider:s},{markInProgress:!1,onlyIfMissing:!0}))}};i(),[1500,5000,12000,30000].forEach(e=>setTimeout(i,e))}break}case"codex-route-local-thread-title":{let n=r.conversationId,o=r.title,i=this.findPanelByWebview(e);if(i&&typeof n=="string"&&typeof o=="string"){let s=__TITLE_FN__(o);if(s!==__TITLE_DEFAULT__){let a=s.replace(/[\\\\/]/g," ").replace(/\\s+/g," ").trim();i.iconPath={light:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:__NS__.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")},i.title=s,this.chatSessionItemProvider?.registerPendingConversation({conversationId:n,resource:__URI_FN__(`/local/${n}/${a}`),label:o,modelProvider:null},{markInProgress:!1,onlyIfMissing:!0})}}break}';
 
 function applyTemplate(template, ids) {
     return template
@@ -25,6 +29,12 @@ function applyTemplate(template, ids) {
         .replaceAll('__TITLE_FN__', ids.titleFn)
         .replaceAll('__TITLE_DEFAULT__', ids.titleDefault)
         .replaceAll('__URI_FN__', ids.uriFn);
+}
+
+// String.replace treats `$` sequences in the replacement as patterns; minified
+// identifiers may contain `$`, so always replace via a function.
+function replaceLiteral(content, find, replacement) {
+    return content.replace(find, () => replacement);
 }
 
 function makeIconPath(ns) {
@@ -47,14 +57,9 @@ function discoverHost(content) {
     };
 }
 
-function discoverDispatcher(navigateContent) {
-    const aliasMatch = navigateContent.match(/([\w$]+)\.dispatchMessage/);
-    if (!aliasMatch) return null;
-    const alias = aliasMatch[1];
-    const importRe = new RegExp(String.raw`import\{[^}]*([\w$]+) as ${alias}[^}]*\}from"\.\/([\w.$-]+\.js)"`);
-    const importMatch = navigateContent.match(importRe);
-    if (!importMatch) return null;
-    return { exportName: importMatch[1], module: importMatch[2] };
+function discoverDispatcher(content) {
+    const aliasMatch = content.match(/([\w$]+)\.dispatchMessage/);
+    return aliasMatch ? aliasMatch[1] : null;
 }
 
 function parseParams(content, anchor) {
@@ -117,48 +122,6 @@ async function addToThreadKeepExplorer() {
     }
 }
 
-function findCodexExtDir() {
-    const extRoot = path.join(os.homedir(), '.cursor', 'extensions');
-    try {
-        const dirs = fs.readdirSync(extRoot)
-            .filter((d) => d.startsWith('openai.chatgpt-'))
-            .map((d) => path.join(extRoot, d))
-            .filter((d) => fs.statSync(d).isDirectory())
-            .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-        return dirs.length > 0 ? dirs[0] : null;
-    } catch (_) {
-        return null;
-    }
-}
-
-function findFileByPrefix(dir, prefix, ext) {
-    try {
-        return fs.readdirSync(dir).find((f) => f.startsWith(prefix) && f.endsWith(ext)) || null;
-    } catch (_) {
-        return null;
-    }
-}
-
-function findAssetByContent(assetsDir, ...needles) {
-    try {
-        for (const f of fs.readdirSync(assetsDir)) {
-            if (!f.endsWith('.js')) continue;
-            const c = fs.readFileSync(path.join(assetsDir, f), 'utf8');
-            if (needles.every((n) => c.includes(n))) return f;
-        }
-    } catch (_) {}
-    return null;
-}
-
-// The webview route module (RouteScope atom + route resolution) is the patch
-// target for route-home and title patches. Codex renames/splits its assets on
-// every rebuild, so locate it by content rather than filename prefix. The
-// legacy `route-scope-` prefix is kept as a fallback for older builds.
-function findRouteAssetFile(assetsDir) {
-    return findAssetByContent(assetsDir, '`RouteScope`,{key:', 'routeKind:`home`')
-        || findFileByPrefix(assetsDir, 'route-scope-', '.js');
-}
-
 function backupFile(filePath) {
     const bak = filePath + '.bak';
     if (!fs.existsSync(bak)) fs.copyFileSync(filePath, bak);
@@ -180,7 +143,7 @@ function replaceBetween(content, startAnchor, endAnchor, replacement) {
     return content.substring(0, start) + replacement + content.substring(end);
 }
 
-function applyPatchSpec(spec) {
+function applyPatchSpec(spec, report) {
     const {
         id,
         file,
@@ -192,10 +155,15 @@ function applyPatchSpec(spec) {
         transform,
     } = spec;
 
-    if (!file || !fs.existsSync(file)) {
-        if (required) throw patchFailed(id, file, 'file not found');
+    // Required patches abort activation; optional ones degrade the feature they
+    // carry and are reported to the user as a warning.
+    const fail = (reason) => {
+        if (required) throw patchFailed(id, file, reason);
+        if (report) report.skipped.push({ id, file, reason });
         return false;
-    }
+    };
+
+    if (!file || !fs.existsSync(file)) return fail('file not found');
 
     const content = fs.readFileSync(file, 'utf8');
     if (verify && verify(content)) return false;
@@ -203,48 +171,37 @@ function applyPatchSpec(spec) {
     let result = content;
     if (transform) {
         result = transform(content);
-        if (result === null) {
-            if (required) throw patchFailed(id, file, 'old text not found');
-            return false;
-        }
+        if (result === null) return fail('old text not found');
     } else {
         const variants = Array.isArray(old) ? old : [old];
         const found = variants.find((candidate) => candidate && content.includes(candidate));
-        if (!found) {
-            if (required) throw patchFailed(id, file, 'old text not found');
-            return false;
-        }
-        result = content.replace(found, nextText);
+        if (!found) return fail('old text not found');
+        result = replaceLiteral(content, found, nextText);
     }
 
-    if (!result || result === content) {
-        if (required) throw patchFailed(id, file, 'no change produced');
-        return false;
-    }
-    if (verify && !verify(result)) {
-        throw patchFailed(id, file, 'verification failed after patch');
-    }
+    if (!result || result === content) return fail('no change produced');
+    if (verify && !verify(result)) return fail('verification failed after patch');
 
     backupFile(file);
     fs.writeFileSync(file, result, 'utf8');
     return true;
 }
 
-function applyPatchGroup(patches) {
+function applyPatchGroup(patches, report) {
     let changed = false;
     for (const patch of patches) {
-        if (applyPatchSpec(patch)) changed = true;
+        if (applyPatchSpec(patch, report)) changed = true;
     }
     return changed;
 }
 
 // --- Patches ---
 
-function patchRouteHome(assetsDir) {
-    const routeFile = findRouteAssetFile(assetsDir);
-    const appMainFile = findFileByPrefix(assetsDir, 'app-main-', '.js');
+function patchRouteHome(assetsDir, report) {
+    const routeFile = targets.findRouteAssetFile(assetsDir);
+    const routeTableFile = targets.findRouteTableFile(assetsDir);
     const routePath = routeFile ? path.join(assetsDir, routeFile) : null;
-    const appMainPath = appMainFile ? path.join(assetsDir, appMainFile) : null;
+    const routeTablePath = routeTableFile ? path.join(assetsDir, routeTableFile) : null;
 
     return applyPatchGroup([
         {
@@ -257,15 +214,27 @@ function patchRouteHome(assetsDir) {
                 const m = re.exec(content);
                 if (!m) return null;
                 const v = m[1];
-                return content.replace(m[0], `${v}===\`/\`||${v}===\`/Codex\`||`);
+                return replaceLiteral(content, m[0], `${v}===\`/\`||${v}===\`/Codex\`||`);
             },
         },
         {
             id: 'route-home-react-copy',
-            file: appMainPath,
+            file: routeTablePath,
             marker: PATCH_MARKER,
             transform(content) {
                 if (content.includes(PATCH_MARKER)) return content;
+
+                // Codex 26.721: the home route is a bare element inheriting the
+                // parent layout — `(0,o5.jsx)(Xa,{path:`/`})`.
+                const bareRe = /\(0,([\w$]+)\.jsx\)\(([\w$]+),\{path:`\/`\}\)/;
+                const bare = bareRe.exec(content);
+                if (bare) {
+                    const insertAt = bare.index + bare[0].length;
+                    const copy = `,(0,${bare[1]}.jsx)(${bare[2]},{path:\`/Codex\`})`;
+                    return content.substring(0, insertAt) + copy + content.substring(insertAt);
+                }
+
+                // Older builds: `(0,X.jsx)(Route,{path:`/`,element:...})`.
                 const homeRoute = 'path:`/`,';
                 const idx = content.indexOf(homeRoute);
                 if (idx === -1) return content;
@@ -280,30 +249,28 @@ function patchRouteHome(assetsDir) {
                 const routeStart = searchStart + jsxOff;
                 const routeEnd = nextSep + 1;
                 const original = content.substring(routeStart, routeEnd);
-                const copy = original.replace('path:`/`', 'path:`/Codex`');
+                const copy = replaceLiteral(original, 'path:`/`', 'path:`/Codex`');
                 return content.substring(0, routeEnd) + ',' + copy + content.substring(routeEnd);
             },
         },
-    ]);
+    ], report);
 }
 
-function patchHistoryNavigation(assetsDir, extensionPath, ids) {
-    const navigateFile = findFileByPrefix(
-        assetsDir,
-        'use-navigate-to-local-conversation-',
-        '.js'
-    );
+function patchHistoryNavigation(assetsDir, extensionPath, ids, report) {
+    const navigateFile = targets.findNavigateFile(assetsDir);
     const navigatePath = navigateFile ? path.join(assetsDir, navigateFile) : null;
 
     return applyPatchGroup([
         {
             id: 'history-click-current-panel',
             file: navigatePath,
+            required: false,
             marker: 'navigate-in-current-editor-tab',
             transform(content) {
                 if (content.includes('navigate-in-current-editor-tab')) return null;
                 if (!content.includes('navigate-in-new-editor-tab')) return null;
-                return content.replace(
+                return replaceLiteral(
+                    content,
                     'navigate-in-new-editor-tab',
                     'navigate-in-current-editor-tab'
                 );
@@ -312,6 +279,7 @@ function patchHistoryNavigation(assetsDir, extensionPath, ids) {
         {
             id: 'history-host-current-panel',
             file: extensionPath,
+            required: false,
             marker: null,
             verify(content) {
                 const start = content.indexOf('case"navigate-in-current-editor-tab"');
@@ -329,17 +297,10 @@ function patchHistoryNavigation(assetsDir, extensionPath, ids) {
                     applyTemplate(HISTORY_PATCH_TEMPLATE, ids));
             },
         },
-    ]);
+    ], report);
 }
 
-function patchPanelLifecycle(extensionPath, ids) {
-    const initParams = parseParams(
-        fs.readFileSync(extensionPath, 'utf8'),
-        'async initializeWebview'
-    );
-    const webviewParam = initParams ? initParams[0] : 'e';
-    const modeParam = initParams ? initParams[1] : 'r';
-
+function patchPanelLifecycle(extensionPath, ids, report) {
     const resolveParams = parseParams(
         fs.readFileSync(extensionPath, 'utf8'),
         'async resolveCustomEditor'
@@ -350,18 +311,28 @@ function patchPanelLifecycle(extensionPath, ids) {
 
     return applyPatchGroup([
         {
+            // A /Codex home panel must not register the thread-follower IPC
+            // handlers — it would compete with the panel that actually owns the
+            // active thread. Only those handlers are skipped: everything else
+            // in the client-coordination session (notably the app host session
+            // that gives the webview its services) must stay, or the panel
+            // renders an empty shell.
             id: 'panel-codex-home-ipc-skip',
             file: extensionPath,
-            marker: 'm0==="/Codex"',
+            required: false,
+            marker: '__codexHomeNoFollower',
             transform(content) {
-                const anchor = `async initializeWebview(${initParams ? initParams.join(',') : 'e,r,n,o'}){`;
-                const idx = content.indexOf(anchor);
-                if (idx === -1) return null;
-                const target = `this.registerIpcClientForWebview(${webviewParam})`;
-                const tIdx = content.indexOf(target, idx);
-                if (tIdx === -1 || tIdx > idx + 200) return null;
-                const conditional = `let p0=this.findPanelByWebview(${webviewParam}),m0=p0?this.editorPanels.get(p0)?.initialRoute:null;(${modeParam}==="panel"&&m0==="/Codex")||this.registerIpcClientForWebview(${webviewParam})`;
-                return content.substring(0, tIdx) + conditional + content.substring(tIdx + target.length);
+                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:([\w$]+),viewService:([\w$]+)\.services\.clientCoordination\}\)/;
+                const m = re.exec(content);
+                if (!m) return null;
+                const [full, resultVar, followerFn, ipcVar, appViewVar] = m;
+                const sessionParams = parseParams(content, 'createClientCoordinationSession');
+                const webviewVar = sessionParams ? sessionParams[0] : 'e';
+                const replacement =
+                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:`
+                    + `${followerFn}({hostId:"local",ipcClient:${ipcVar},viewService:${appViewVar}.services.clientCoordination}))`
+                    + `(this.editorPanels.get(this.findPanelByWebview(${webviewVar}))?.initialRoute==="/Codex")`;
+                return replaceLiteral(content, full, replacement);
             },
         },
         {
@@ -376,6 +347,7 @@ function patchPanelLifecycle(extensionPath, ids) {
         {
             id: 'panel-create-editor-icon',
             file: extensionPath,
+            required: false,
             marker: null,
             verify(content) {
                 const cwpIdx = content.indexOf(ids.ns + '.window.createWebviewPanel');
@@ -399,6 +371,7 @@ function patchPanelLifecycle(extensionPath, ids) {
         {
             id: 'custom-editor-icon-early',
             file: extensionPath,
+            required: false,
             marker: null,
             verify(content) {
                 const anchor = 'async resolveCustomEditor(';
@@ -433,83 +406,51 @@ function patchPanelLifecycle(extensionPath, ids) {
                 );
                 const m = re.exec(content);
                 if (!m) return null;
-                return content.replace(m[0], m[1] + ',' + m[2]);
+                return replaceLiteral(content, m[0], m[1] + ',' + m[2]);
             },
         },
-    ]);
+    ], report);
 }
 
-function patchTabTitles(assetsDir, extensionPath, ids) {
-    const routeFile = findRouteAssetFile(assetsDir);
+function patchTabTitles(assetsDir, extensionPath, ids, report) {
+    const routeFile = targets.findRouteAssetFile(assetsDir);
     const routePath = routeFile ? path.join(assetsDir, routeFile) : null;
-
-    const navigateFile = findFileByPrefix(assetsDir, 'use-navigate-to-local-conversation-', '.js');
-    const navigatePath = navigateFile ? path.join(assetsDir, navigateFile) : null;
-    let dispatcherInfo = null;
-    if (navigatePath) {
-        try {
-            dispatcherInfo = discoverDispatcher(fs.readFileSync(navigatePath, 'utf8'));
-        } catch (_) {}
-    }
 
     return applyPatchGroup([
         {
-            id: 'route-title-import-dispatcher',
+            // Injected at the local-thread route site: tells the host which
+            // conversation the panel now shows, and installs a DOM observer
+            // that reports the rendered thread title. Both the dispatcher alias
+            // and the bridge live at that site, so no import injection and no
+            // assumptions about the module wrapper shape.
+            id: 'route-title-bridge',
             file: routePath,
-            marker: null,
-            verify(content) {
-                return content.includes(' as Pcdx}from"./');
-            },
-            transform(content) {
-                if (!dispatcherInfo) return null;
-                const { exportName, module: mod } = dispatcherInfo;
-                if (content.includes(` as Pcdx}from"./${mod}"`)) return null;
-                const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const importRe = new RegExp(String.raw`import\{([^}]+)\}from"\.\/` + escaped + '"');
-                const m = importRe.exec(content);
-                if (m) {
-                    const patched = m[0].replace('}from"', `,${exportName} as Pcdx}from"`);
-                    return content.replace(m[0], patched);
-                }
-                const firstImport = content.indexOf('import');
-                if (firstImport === -1) return null;
-                return content.substring(0, firstImport) +
-                    `import{${exportName} as Pcdx}from"./${mod}";` +
-                    content.substring(firstImport);
-            },
-        },
-        {
-            id: 'route-title-dom-bridge',
-            file: routePath,
-            marker: ROUTE_TITLE_DOM_BRIDGE,
-            transform(content) {
-                const re = /var [\w$]+=[\w$]+\(`RouteScope`,\{key:[\w$]+=>`\$\{[\w$]+\.pathname\}\$\{[\w$]+\.search\?\?``\}`,parent:[\w$]+,retain:\{max:20\}\}\);/;
-                const m = re.exec(content);
-                if (!m) return null;
-                return content.substring(0, m.index) + ROUTE_TITLE_DOM_BRIDGE + content.substring(m.index);
-            },
-        },
-        {
-            id: 'route-title-dispatch-on-local-thread',
-            file: routePath,
+            required: false,
             marker: 'codex-route-local-thread',
             transform(content) {
-                // Codex 26.616 extracted the URLSearchParams parsing into a
-                // module-level helper, so the local-thread route now reads:
-                //   if(l!=null){let e=P(a);return{conversationId:c(l),pathname:n,
-                //   projectContext:e,routeKind:`local-thread`,routeTemplate:r,search:a}}
-                const blockRe = /if\((\w+)!=null\)\{let (\w+)=(\w+)\((\w+)\);return\{conversationId:(\w+)\(\1\),pathname:(\w+),projectContext:\2,routeKind:`local-thread`,routeTemplate:(\w+),search:\4\}\}/;
-                const m = blockRe.exec(content);
+                const dispatch = discoverDispatcher(content);
+                if (!dispatch) return null;
+
+                // return{conversationId:ul(r),pathname:e,projectContext:i,
+                //   routeKind:`local-thread`,routeTemplate:t,search:n}
+                const returnRe = /return\{conversationId:([\w$]+)\(([\w$]+)\),([^{}]*routeKind:`local-thread`[^{}]*)\}/;
+                const m = returnRe.exec(content);
                 if (!m) return null;
-                const [full, rawId, , pcFn, searchVar, convFn, pathVar, tmplVar] = m;
+                const [full, convFn, rawId, rest] = m;
+                const bridge = ROUTE_TITLE_DOM_BRIDGE.replaceAll('__DISPATCH__', dispatch);
                 const replacement =
-                    `if(${rawId}!=null){let __cv=${convFn}(${rawId});try{globalThis.__codexNewTabRouteConversationId!==__cv&&(globalThis.__codexNewTabRouteConversationId=__cv,Pcdx.dispatchMessage(\`codex-route-local-thread\`,{conversationId:__cv})),T(__cv)}catch{}return{conversationId:__cv,pathname:${pathVar},projectContext:${pcFn}(${searchVar}),routeKind:\`local-thread\`,routeTemplate:${tmplVar},search:${searchVar}}}`;
-                return content.replace(full, replacement);
+                    `let __cv=${convFn}(${rawId});try{${bridge}` +
+                    `globalThis.__codexNewTabRouteConversationId!==__cv&&(globalThis.__codexNewTabRouteConversationId=__cv,` +
+                    `${dispatch}.dispatchMessage(\`codex-route-local-thread\`,{conversationId:__cv})),` +
+                    `globalThis.__codexNewTabTitleBridge(__cv)}catch{}` +
+                    `return{conversationId:__cv,${rest}}`;
+                return replaceLiteral(content, full, replacement);
             },
         },
         {
             id: 'host-title-route-label-parser',
             file: extensionPath,
+            required: false,
             marker: 'routeLabel',
             transform(content) {
                 const startAnchor = `function ${ids.parserFn}(`;
@@ -525,6 +466,7 @@ function patchTabTitles(assetsDir, extensionPath, ids) {
         {
             id: 'host-title-route-label-init',
             file: extensionPath,
+            required: false,
             marker: 'routeLabel:__rl',
             transform(content) {
                 const re = /let\{conversationId:(\w+)\}=(\w+),(\w+)=null,(\w+)=null;/;
@@ -542,6 +484,7 @@ function patchTabTitles(assetsDir, extensionPath, ids) {
         {
             id: 'host-title-route-label-preview-fallback',
             file: extensionPath,
+            required: false,
             marker: '??__rl)',
             transform(content) {
                 const re = new RegExp(
@@ -553,32 +496,39 @@ function patchTabTitles(assetsDir, extensionPath, ids) {
                 if (!m) return null;
                 const [full, pv, lv] = m;
                 const replacement = `this.isPanelAlive(${pv})&&(${pv}.title=${ids.titleFn}(${lv}??__rl))`;
-                return content.replace(full, replacement);
+                return replaceLiteral(content, full, replacement);
             },
         },
         {
             id: 'host-title-message-handlers',
             file: extensionPath,
+            required: false,
             marker: 'case"codex-route-local-thread-title":',
+            // Inserted before an existing case instead of replacing a span of
+            // cases: Codex reshuffles the message switch on every release, and
+            // a replace would silently drop whatever it renamed in between.
             transform(content) {
-                return replaceBetween(content,
-                    'case"inbox-item-set-read-state":',
-                    'case"subagent-thread-opened":',
-                    `case"inbox-item-set-read-state":case"inbox-items-create":break;case"open-mcp-app-sandbox-devtools":break;${applyTemplate(TITLE_PATCH_TEMPLATE, ids)}`);
+                const anchor = 'case"inbox-item-set-read-state":';
+                const idx = content.indexOf(anchor);
+                if (idx === -1) return null;
+                return content.substring(0, idx)
+                    + applyTemplate(TITLE_PATCH_TEMPLATE, ids)
+                    + content.substring(idx);
             },
             verify(content) {
                 return content.includes('case"codex-route-local-thread-title":')
                     && content.includes('"blossom-black.svg"');
             },
         },
-    ]);
+    ], report);
 }
 
-function patchFetchNoise(extensionPath) {
+function patchFetchNoise(extensionPath, report) {
     return applyPatchGroup([
         {
             id: 'fetch-connector-logo-transparent-png',
             file: extensionPath,
+            required: false,
             marker: '/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(',
             transform(content) {
                 const anchorRe = /let (\w+)=new AbortController;if\(this\.(\w+)\((\w+)\.requestId[^)]*\),/;
@@ -593,30 +543,31 @@ function patchFetchNoise(extensionPath) {
                 return content.substring(0, insertAfter) + logoBlock + content.substring(nextIf);
             },
         },
-    ]);
+    ], report);
 }
 
 // --- Main ---
 
-function patchCodex() {
-    const codexDir = findCodexExtDir();
-    if (!codexDir) return false;
+function patchCodex(codexDirOverride) {
+    const codexDir = codexDirOverride || targets.findCodexExtDir();
+    const report = { patched: false, skipped: [], codexVersion: null };
+    if (!codexDir) return report;
+    report.codexVersion = targets.readCodexVersion(codexDir);
 
     const assetsDir = path.join(codexDir, 'webview', 'assets');
     const extensionPath = path.join(codexDir, 'out', 'extension.js');
 
-    if (!fs.existsSync(extensionPath)) return false;
+    if (!fs.existsSync(extensionPath)) return report;
     const hostContent = fs.readFileSync(extensionPath, 'utf8');
     const ids = requireDiscovery(discoverHost(hostContent), 'host');
 
-    let patched = false;
-    if (patchRouteHome(assetsDir)) patched = true;
-    if (patchHistoryNavigation(assetsDir, extensionPath, ids)) patched = true;
-    if (patchPanelLifecycle(extensionPath, ids)) patched = true;
-    if (patchTabTitles(assetsDir, extensionPath, ids)) patched = true;
-    if (patchFetchNoise(extensionPath)) patched = true;
+    if (patchRouteHome(assetsDir, report)) report.patched = true;
+    if (patchHistoryNavigation(assetsDir, extensionPath, ids, report)) report.patched = true;
+    if (patchPanelLifecycle(extensionPath, ids, report)) report.patched = true;
+    if (patchTabTitles(assetsDir, extensionPath, ids, report)) report.patched = true;
+    if (patchFetchNoise(extensionPath, report)) report.patched = true;
 
-    return patched;
+    return report;
 }
 
 function activate(context) {
@@ -626,7 +577,7 @@ function activate(context) {
     );
 
     try {
-        const patched = patchCodex();
+        const { patched, skipped, codexVersion } = patchCodex();
         if (patched) {
             vscode.window.showInformationMessage(
                 'Codex tab patches applied. Reload window to apply.',
@@ -636,6 +587,20 @@ function activate(context) {
                     vscode.commands.executeCommand('workbench.action.reloadWindow');
                 }
             });
+        } else {
+            // Nothing to write means the install is already patched. Say so in
+            // the log — silence here reads as "the extension did nothing".
+            console.log(`[codex-new-tab] patches already applied (Codex ${codexVersion || 'unknown'})`);
+        }
+        if (skipped.length > 0) {
+            for (const s of skipped) {
+                console.warn(`[codex-new-tab] skipped ${s.id} (${s.file}): ${s.reason}`);
+            }
+            const version = codexVersion ? ` Codex ${codexVersion}` : '';
+            vscode.window.showWarningMessage(
+                `Codex tabs: работает частично.${version} не применились: `
+                + `${skipped.map((s) => s.id).join(', ')}. Причины — в Developer Tools console.`
+            );
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

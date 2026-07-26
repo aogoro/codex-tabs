@@ -65,11 +65,25 @@ On activation, the extension patches the installed OpenAI Codex extension's mini
 5. **IPC isolation** — `/Codex` home panels skip IPC client registration to avoid conflicts with active threads
 6. **Network noise** — intercepts connector logo fetch requests and returns a transparent pixel
 
-Patches are applied idempotently with verification markers. If the Codex extension updates and changes incompatible structures, the patcher reports an error without corrupting files. Backup files (`.bak`) are created before any modification.
+Patches are applied idempotently with verification markers, and backup files (`.bak`) are created before any modification. Target files are located by content (see `lib/targets.js`) because Codex renames and merges its bundles on every rebuild.
+
+Patches that are essential for opening a tab are required — if one of them no longer matches, activation stops with an error and nothing is written. The rest (titles, icons, in-tab history, network noise) are optional: they are skipped individually and reported in an orange warning listing the patch ids, with reasons in the Developer Tools console.
 
 ## After Codex updates
 
-When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. If the update changes the internal code structure incompatibly, you'll see an error notification. In that case, wait for an update to this extension or check the [issues](https://github.com/aogoro/codex-tabs/issues).
+When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.721.30844**.
+
+If an update changes the internal structure, re-anchor the patches:
+
+```bash
+node scripts/verify-clean-apply.js   # dry-run on copies; names the failing patch and validates syntax
+node scripts/verify-installed.js     # state of the real installation
+node scripts/restore-backups.js      # roll back to stock Codex from the .bak files
+```
+
+`verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. Iterate with `restore-backups.js` + reload, since patches only apply to unpatched files.
+
+Both verify scripts check for markers, which proves a patch was written — not that Codex still works. After re-anchoring, always open a Codex tab and confirm the UI actually renders.
 
 ## Third-party assets
 
