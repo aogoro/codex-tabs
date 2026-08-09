@@ -46,13 +46,20 @@ function makeIconPath(ns) {
 function discoverHost(content) {
     const ID = String.raw`[$A-Z_a-z][$\w]*`;
     const m = (re) => { const r = content.match(new RegExp(re)); return r ? r[1] : null; };
+    const schemeConst = m(`(${ID})="openai-codex"`);
     return {
         ns:           m(`(${ID})\\.window\\.createWebviewPanel`),
         titleFn:      m(`function (${ID})\\([^)]*\\)\\{return [^}]*\\.substring\\(0,`),
         titleDefault: m(`title\\?\\?(${ID}),\\{viewColumn:`),
-        uriFn:        m(`function (${ID})\\([^)]*\\)\\{return ${ID}\\.Uri\\.file`),
+        // The route uri builder. `[^{}]*` tolerates statements before the
+        // return — Codex 26.803 splits the query string off the path first —
+        // and the `.with({scheme:` tail is what separates it from the several
+        // unrelated `*.Uri.file` path helpers in the same bundle.
+        uriFn: schemeConst
+            ? m(`function (${ID})\\([^)]*\\)\\{[^{}]*return ${ID}\\.Uri\\.file\\([^)]*\\)\\.with\\(\\{scheme:${schemeConst}`)
+            : null,
         parserFn:     m(`function (${ID})\\([^)]*\\)\\{let\\{scheme:[^,]+,authority:[^,]+,path:`),
-        schemeConst:  m(`(${ID})="openai-codex"`),
+        schemeConst,
         authConst:    m(`(${ID})="route"`),
     };
 }
@@ -141,6 +148,46 @@ function replaceBetween(content, startAnchor, endAnchor, replacement) {
     const end = content.indexOf(endAnchor, start + startAnchor.length);
     if (end === -1) return null;
     return content.substring(0, start) + replacement + content.substring(end);
+}
+
+// Exact `[start, end)` of a `function NAME(...){...}` declaration, by brace
+// balance. Ending a replacement at "the next function we know about" instead
+// silently deletes anything Codex emits in between: 26.803 inserted a live
+// helper between the route parser and the uri builder, and the marker check
+// plus `node --check` both pass on the result.
+// Strings and template literals are tracked; regex literals are not — a `{`
+// or a quote inside one would throw the scan off. None of the functions we
+// patch contain one, and a bad scan degrades to a skipped patch, not a
+// corrupted bundle.
+function findFunctionSpan(content, name) {
+    const start = content.indexOf(`function ${name}(`);
+    if (start === -1) return null;
+    const bodyStart = content.indexOf('{', start);
+    if (bodyStart === -1) return null;
+
+    const stack = []; // '{' = code block, '`' = template literal
+    let quote = null;
+    for (let i = bodyStart; i < content.length; i++) {
+        const ch = content[i];
+        if (quote) {
+            if (ch === '\\') i++;
+            else if (ch === quote) quote = null;
+            continue;
+        }
+        if (stack[stack.length - 1] === '`') {
+            if (ch === '\\') i++;
+            else if (ch === '`') stack.pop();
+            else if (ch === '$' && content[i + 1] === '{') { stack.push('{'); i++; }
+            continue;
+        }
+        if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === '`' || ch === '{') stack.push(ch);
+        else if (ch === '}') {
+            stack.pop();
+            if (stack.length === 0) return [start, i + 1];
+        }
+    }
+    return null;
 }
 
 function applyPatchSpec(spec, report) {
@@ -453,14 +500,23 @@ function patchTabTitles(assetsDir, extensionPath, ids, report) {
             required: false,
             marker: 'routeLabel',
             transform(content) {
-                const startAnchor = `function ${ids.parserFn}(`;
-                const endAnchor = `function ${ids.uriFn}(`;
-                const startIdx = content.indexOf(startAnchor);
-                if (startIdx === -1) return null;
-                const paramMatch = content.slice(startIdx).match(/function \w+\((\w+)\)/);
+                const span = findFunctionSpan(content, ids.parserFn);
+                if (!span) return null;
+                const [startIdx, endIdx] = span;
+                const original = content.slice(startIdx, endIdx);
+                // The parser has no nested closures; a `function` inside the
+                // span means the scan ran past its target, and replacing it
+                // would delete live code.
+                if (original.indexOf('function ', 1) !== -1) return null;
+
+                const paramMatch = original.match(/function \w+\((\w+)\)/);
                 const p = paramMatch ? paramMatch[1] : 't';
-                const replacement = `function ${ids.parserFn}(${p}){let{scheme:e,authority:r,path:n}=${p};if(e!==${ids.schemeConst})return null;if(r!==${ids.authConst})return null;let i=(n.startsWith("/")?n.slice(1):n).split("/"),s=null,a=null;if(i.length>=2&&(i[0]==="local"||i[0]==="remote")&&(s=i[1]),i.length>=3)try{a=decodeURIComponent(i.slice(2).join("/"))}catch{}return{path:${p}.fsPath,conversationId:s,routeLabel:a}}`;
-                return replaceBetween(content, startAnchor, endAnchor, replacement);
+                // `path` keeps the query string, matching what Codex itself
+                // returns since 26.803 — `fsPath` would drop it. `routeLabel`
+                // is what this patch is actually here for: the conversation
+                // title carried in the path segments after the id.
+                const replacement = `function ${ids.parserFn}(${p}){let{scheme:e,authority:r,path:n}=${p};if(e!==${ids.schemeConst})return null;if(r!==${ids.authConst})return null;let i=(n.startsWith("/")?n.slice(1):n).split("/"),s=null,a=null;if(i.length>=2&&(i[0]==="local"||i[0]==="remote")&&(s=i[1]),i.length>=3)try{a=decodeURIComponent(i.slice(2).join("/"))}catch{}return{path:n+(${p}.query===""?"":"?"+${p}.query),conversationId:s,routeLabel:a}}`;
+                return content.substring(0, startIdx) + replacement + content.substring(endIdx);
             },
         },
         {
