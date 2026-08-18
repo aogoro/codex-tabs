@@ -146,10 +146,8 @@ const checks = {
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
     // A patch that renders the webview inert still passes every marker check —
-    // this one failed silently once. The webview only gets its services from
-    // the client-coordination registration in initializeWebview, so that call
-    // must stay unconditional.
-    hostAppViewIntact: /async initializeWebview\([^)]*\)\{this\.register(?:ClientCoordinationForWebview|IpcClientForWebview)\(/.test(out || ''),
+    // this one failed silently once. See lib/targets.js for the shapes.
+    hostAppViewIntact: targets.hostAppViewIntact(out),
 };
 
 // Marker checks only prove the text landed; parse the results to prove the

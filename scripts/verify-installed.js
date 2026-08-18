@@ -74,7 +74,7 @@ const checks = {
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
-    hostAppViewIntact: /async initializeWebview\([^)]*\)\{this\.register(?:ClientCoordinationForWebview|IpcClientForWebview)\(/.test(out || ''),
+    hostAppViewIntact: targets.hostAppViewIntact(out),
 };
 
 const failed = Object.entries(checks)
