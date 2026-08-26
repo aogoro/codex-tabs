@@ -71,7 +71,7 @@ Patches that are essential for opening a tab are required — if one of them no 
 
 ## After Codex updates
 
-When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.814.41407**.
+When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.820.60940**.
 
 If an update changes the internal structure, re-anchor the patches:
 

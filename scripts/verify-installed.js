@@ -72,6 +72,8 @@ const checks = {
     titleRouteBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
+    titlePreviewFallback: Boolean(out && out.includes('??__rl)')),
+    titleIconDedup: !/[\w$]+\.title=[\w$]+\([\w$]+\),[\w$]+\.iconPath=\{light:/.test(out || ''),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
     hostAppViewIntact: targets.hostAppViewIntact(out),
