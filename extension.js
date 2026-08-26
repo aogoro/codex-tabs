@@ -37,6 +37,14 @@ function replaceLiteral(content, find, replacement) {
     return content.replace(find, () => replacement);
 }
 
+// The same hazard on the matching side: a discovered identifier spliced raw
+// into a RegExp turns its `$` into an end-of-input anchor, so the pattern can
+// never match. Codex 26.820 minified the title helper to `$Ee` and silently
+// broke two patches this way.
+function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function makeIconPath(ns) {
     return `{light:${ns}.Uri.joinPath(this.extensionUri,"resources","blossom-black.svg"),dark:${ns}.Uri.joinPath(this.extensionUri,"resources","blossom-white.svg")}`;
 }
@@ -56,7 +64,7 @@ function discoverHost(content) {
         // and the `.with({scheme:` tail is what separates it from the several
         // unrelated `*.Uri.file` path helpers in the same bundle.
         uriFn: schemeConst
-            ? m(`function (${ID})\\([^)]*\\)\\{[^{}]*return ${ID}\\.Uri\\.file\\([^)]*\\)\\.with\\(\\{scheme:${schemeConst}`)
+            ? m(`function (${ID})\\([^)]*\\)\\{[^{}]*return ${ID}\\.Uri\\.file\\([^)]*\\)\\.with\\(\\{scheme:${escapeRegExp(schemeConst)}`)
             : null,
         parserFn:     m(`function (${ID})\\([^)]*\\)\\{let\\{scheme:[^,]+,authority:[^,]+,path:`),
         schemeConst,
@@ -443,13 +451,13 @@ function patchPanelLifecycle(extensionPath, ids, report) {
             marker: null,
             verify(content) {
                 const re = new RegExp(
-                    String.raw`\w+\.title=` + ids.titleFn + String.raw`\(\w+\),\w+\.iconPath=\{light:`
+                    String.raw`\w+\.title=` + escapeRegExp(ids.titleFn) + String.raw`\(\w+\),\w+\.iconPath=\{light:`
                 );
                 return !re.test(content);
             },
             transform(content) {
                 const re = new RegExp(
-                    String.raw`(\w+\.title=` + ids.titleFn + String.raw`\(\w+\)),\w+\.iconPath=\{[^}]+\},(\w+!=null&&)`
+                    String.raw`(\w+\.title=` + escapeRegExp(ids.titleFn) + String.raw`\(\w+\)),\w+\.iconPath=\{[^}]+\},(\w+!=null&&)`
                 );
                 const m = re.exec(content);
                 if (!m) return null;
@@ -545,7 +553,7 @@ function patchTabTitles(assetsDir, extensionPath, ids, report) {
             transform(content) {
                 const re = new RegExp(
                     String.raw`this\.isPanelAlive\((\w+)\)&&\(\1\.title=` +
-                    ids.titleFn +
+                    escapeRegExp(ids.titleFn) +
                     String.raw`\((\w+)\)\)`
                 );
                 const m = re.exec(content);
