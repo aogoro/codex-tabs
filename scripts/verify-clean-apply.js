@@ -136,9 +136,8 @@ const checks = {
         historyBlock.includes('sendMessageToPanel') && historyBlock.includes('"navigate-to-route"')
     ),
     noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('.dispose()')),
-    panelIconPatch: Boolean(
-        out && out.includes('"blossom-black.svg"') && out.includes('editorPanels.set(')
-    ),
+    panelIconOnCreate: targets.panelIconOnCreate(out),
+    panelIconOnResolve: targets.panelIconOnResolve(out),
     titleBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
     titleRouteDispatch: Boolean(route && route.includes('codex-route-local-thread')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
@@ -146,10 +145,9 @@ const checks = {
     // The async preview refresh must keep the route label when no preview
     // exists, or the tab title reverts to the default a second after opening.
     titlePreviewFallback: Boolean(out && out.includes('??__rl)')),
-    // Stock Codex sets the title and then the icon in one sequence; the dedup
-    // patch collapses it. Its own verify is regex-based and was blind to the
-    // `$Ee` escaping bug, so assert the stock shape is gone from the result.
-    titleIconDedup: !/[\w$]+\.title=[\w$]+\([\w$]+\),[\w$]+\.iconPath=\{light:/.test(out || ''),
+    // The dedup patch's own verify is regex-based and was blind to the `$Ee`
+    // escaping bug, so assert the stock shape is gone from the result.
+    titleIconDedup: targets.titleIconDedupApplied(out),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
     // A patch that renders the webview inert still passes every marker check —

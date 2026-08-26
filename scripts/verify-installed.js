@@ -66,14 +66,13 @@ const checks = {
         historyBlock.includes('sendMessageToPanel') && historyBlock.includes('"navigate-to-route"')
     ),
     noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('.dispose()')),
-    panelIconPatch: Boolean(
-        out && out.includes('"blossom-black.svg"') && out.includes('editorPanels.set(')
-    ),
+    panelIconOnCreate: targets.panelIconOnCreate(out),
+    panelIconOnResolve: targets.panelIconOnResolve(out),
     titleRouteBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     titlePreviewFallback: Boolean(out && out.includes('??__rl)')),
-    titleIconDedup: !/[\w$]+\.title=[\w$]+\([\w$]+\),[\w$]+\.iconPath=\{light:/.test(out || ''),
+    titleIconDedup: targets.titleIconDedupApplied(out),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
     hostAppViewIntact: targets.hostAppViewIntact(out),
