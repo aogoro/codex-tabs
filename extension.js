@@ -4,8 +4,13 @@ const path = require('path');
 const targets = require('./lib/targets');
 
 const CODEX_CUSTOM_EDITOR = 'chatgpt.conversationEditor';
+const CODEX_EXT_ID = 'openai.chatgpt';
 const RESTORE_DELAY_MS = 700;
 const PATCH_MARKER = 'path:`/Codex`';
+// Codex keeps writing files for a moment after the extension registry reports
+// the update, hence the debounce before patching and the settle check after.
+const REPATCH_DEBOUNCE_MS = 3000;
+const INSTALL_SETTLE_MS = 1500;
 
 const TRANSPARENT_PNG_BASE64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
@@ -198,6 +203,38 @@ function findFunctionSpan(content, name) {
     return null;
 }
 
+// Index of the `}` that closes the object literal starting at `content[braceIdx]`.
+// Same string/template tracking as findFunctionSpan, and the same limitation: a `{`
+// or a quote inside a regex literal would throw the scan off. Deliberately a separate
+// scanner — findFunctionSpan carries four releases of anchoring work, leave it alone.
+function findBraceSpanEnd(content, braceIdx) {
+    if (content[braceIdx] !== '{') return -1;
+
+    const stack = []; // '{' = object/block, '`' = template literal
+    let quote = null;
+    for (let i = braceIdx; i < content.length; i++) {
+        const ch = content[i];
+        if (quote) {
+            if (ch === '\\') i++;
+            else if (ch === quote) quote = null;
+            continue;
+        }
+        if (stack[stack.length - 1] === '`') {
+            if (ch === '\\') i++;
+            else if (ch === '`') stack.pop();
+            else if (ch === '$' && content[i + 1] === '{') { stack.push('{'); i++; }
+            continue;
+        }
+        if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === '`' || ch === '{') stack.push(ch);
+        else if (ch === '}') {
+            stack.pop();
+            if (stack.length === 0) return i;
+        }
+    }
+    return -1;
+}
+
 function applyPatchSpec(spec, report) {
     const {
         id,
@@ -376,18 +413,28 @@ function patchPanelLifecycle(extensionPath, ids, report) {
             file: extensionPath,
             required: false,
             marker: '__codexHomeNoFollower',
+            // The options object is kept verbatim instead of rebuilt from captures:
+            // Codex 26.903 added `shouldForwardThreadReadState` to it, and a rebuild
+            // would have dropped that option while still passing the marker check.
+            // The anchor stops at `clientCoordination` for the same reason — the old
+            // pattern demanded `})` right after it and stopped matching in 26.903.
             transform(content) {
-                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:([\w$]+),viewService:([\w$]+)\.services\.clientCoordination\}\)/;
+                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:[\w$]+,viewService:[\w$]+\.services\.clientCoordination/;
                 const m = re.exec(content);
                 if (!m) return null;
-                const [full, resultVar, followerFn, ipcVar, appViewVar] = m;
+                const [matched, resultVar] = m;
+                const objStart = m.index + matched.indexOf('({') + 1;
+                const objEnd = findBraceSpanEnd(content, objStart);
+                if (objEnd === -1 || content[objEnd + 1] !== ')') return null;
+
+                const callStart = m.index + resultVar.length + 1;
+                const callText = content.slice(callStart, objEnd + 2);
                 const sessionParams = parseParams(content, 'createClientCoordinationSession');
                 const webviewVar = sessionParams ? sessionParams[0] : 'e';
                 const replacement =
-                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:`
-                    + `${followerFn}({hostId:"local",ipcClient:${ipcVar},viewService:${appViewVar}.services.clientCoordination}))`
+                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:${callText})`
                     + `(this.editorPanels.get(this.findPanelByWebview(${webviewVar}))?.initialRoute==="/Codex")`;
-                return replaceLiteral(content, full, replacement);
+                return replaceLiteral(content, content.slice(m.index, objEnd + 2), replacement);
             },
         },
         {
@@ -634,43 +681,138 @@ function patchCodex(codexDirOverride) {
     return report;
 }
 
+// --- Activation ---
+
+let patchedDir = null;      // install the last patch cycle ran against
+let warnedDriftDir = null;  // install we already warned about being newer than the running one
+let cycleInFlight = false;
+let repatchTimer = null;
+
+function offerReload(message, kind) {
+    const show = kind === 'warning'
+        ? vscode.window.showWarningMessage
+        : vscode.window.showInformationMessage;
+    show.call(vscode.window, message, 'Reload').then((choice) => {
+        if (choice === 'Reload') {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        }
+    });
+}
+
+// A Codex that updated under a running window is the failure this reports: the
+// host file the window loaded is gone from disk, so a new tab pairs stock
+// webview assets with patched host code (or the reverse) and renders an error.
+// Patching the running install instead would deepen that mismatch — its
+// out/extension.js is already in the extension host process, while webview
+// assets are re-read per panel. Only a reload gets the window onto one version.
+function reportVersionDrift(newestDir, newestVersion) {
+    const running = vscode.extensions.getExtension(CODEX_EXT_ID);
+    const runningDir = running && running.extensionPath;
+    if (!runningDir || !newestDir || runningDir === newestDir) return false;
+    if (warnedDriftDir === newestDir) return true;
+
+    warnedDriftDir = newestDir;
+    const runningVersion = (running.packageJSON && running.packageJSON.version) || 'unknown';
+    console.warn(`[codex-new-tab] Codex drift: window runs ${runningVersion}, newest on disk ${newestVersion || 'unknown'}`);
+    offerReload(
+        `Codex обновился до ${newestVersion || '?'}, окно работает на ${runningVersion}. `
+        + 'Патчи для новой версии применены — перезагрузи окно.',
+        'warning'
+    );
+    return true;
+}
+
+function runPatchCycle(codexDir) {
+    const { patched, skipped, codexVersion } = patchCodex(codexDir);
+    const drifted = reportVersionDrift(codexDir, codexVersion);
+
+    if (patched && !drifted) {
+        offerReload('Codex tab patches applied. Reload window to apply.');
+    } else if (!patched) {
+        // Nothing to write means the install is already patched. Say so in
+        // the log — silence here reads as "the extension did nothing".
+        console.log(`[codex-new-tab] patches already applied (Codex ${codexVersion || 'unknown'})`);
+    }
+
+    if (skipped.length > 0) {
+        for (const s of skipped) {
+            console.warn(`[codex-new-tab] skipped ${s.id} (${s.file}): ${s.reason}`);
+        }
+        const version = codexVersion ? ` Codex ${codexVersion}` : '';
+        vscode.window.showWarningMessage(
+            `Codex tabs: работает частично.${version} не применились: `
+            + `${skipped.map((s) => s.id).join(', ')}. Причины — в Developer Tools console.`
+        );
+    }
+}
+
+// A just-installed Codex is still being written when the registry change
+// arrives — patching a half-written bundle would leave it broken and the
+// marker check would not notice. Require the manifest to parse and the host
+// file's size to hold still; an unsettled install is retried on the next event.
+async function installSettled(codexDir) {
+    if (!targets.readCodexVersion(codexDir)) return false;
+    const extensionPath = path.join(codexDir, 'out', 'extension.js');
+    const sizeOf = () => {
+        try { return fs.statSync(extensionPath).size; } catch (_) { return -1; }
+    };
+    const before = sizeOf();
+    if (before <= 0) return false;
+    await delay(INSTALL_SETTLE_MS);
+    return sizeOf() === before;
+}
+
+async function maybeRepatch() {
+    if (cycleInFlight) return;
+    const codexDir = targets.findCodexExtDir();
+    // The cheap gate: a readdir. Everything below only runs for an install we
+    // have not patched yet, so focus events cost next to nothing.
+    if (!codexDir || codexDir === patchedDir) return;
+
+    cycleInFlight = true;
+    try {
+        if (!(await installSettled(codexDir))) return;
+        patchedDir = codexDir;
+        runPatchCycle(codexDir);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[codex-new-tab] patch failed:', message);
+        vscode.window.showErrorMessage(`Codex tab patch failed: ${message}`);
+    } finally {
+        cycleInFlight = false;
+    }
+}
+
 function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('codexNewTab.home', openCodexTab),
         vscode.commands.registerCommand('codexNewTab.addToThread', addToThreadKeepExplorer),
     );
 
-    try {
-        const { patched, skipped, codexVersion } = patchCodex();
-        if (patched) {
-            vscode.window.showInformationMessage(
-                'Codex tab patches applied. Reload window to apply.',
-                'Reload'
-            ).then((choice) => {
-                if (choice === 'Reload') {
-                    vscode.commands.executeCommand('workbench.action.reloadWindow');
-                }
-            });
-        } else {
-            // Nothing to write means the install is already patched. Say so in
-            // the log — silence here reads as "the extension did nothing".
-            console.log(`[codex-new-tab] patches already applied (Codex ${codexVersion || 'unknown'})`);
-        }
-        if (skipped.length > 0) {
-            for (const s of skipped) {
-                console.warn(`[codex-new-tab] skipped ${s.id} (${s.file}): ${s.reason}`);
-            }
-            const version = codexVersion ? ` Codex ${codexVersion}` : '';
-            vscode.window.showWarningMessage(
-                `Codex tabs: работает частично.${version} не применились: `
-                + `${skipped.map((s) => s.id).join(', ')}. Причины — в Developer Tools console.`
-            );
-        }
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[codex-new-tab] patch failed:', message);
-        vscode.window.showErrorMessage(`Codex tab patch failed: ${message}`);
-    }
+    const scheduleRepatch = () => {
+        if (repatchTimer) clearTimeout(repatchTimer);
+        repatchTimer = setTimeout(() => {
+            repatchTimer = null;
+            void maybeRepatch();
+        }, REPATCH_DEBOUNCE_MS);
+    };
+
+    context.subscriptions.push(
+        // Codex updates in the background while the window keeps running, and
+        // activation fires once — so patching only at startup leaves the window
+        // on a version that no longer matches the disk. The registry change is
+        // the signal; window focus is the fallback for when it does not fire.
+        vscode.extensions.onDidChange(scheduleRepatch),
+        vscode.window.onDidChangeWindowState((state) => {
+            if (state.focused) void maybeRepatch();
+        }),
+        new vscode.Disposable(() => {
+            if (repatchTimer) clearTimeout(repatchTimer);
+            repatchTimer = null;
+        }),
+    );
+
+    void maybeRepatch();
 }
 
 function deactivate() {}

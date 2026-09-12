@@ -121,6 +121,7 @@ try {
 }
 
 const out = readText(tmpOutExt);
+const pristineOut = readText(sources.out);
 const route = routeFile ? readText(path.join(tmpAssets, routeFile)) : null;
 const routeTable = routeTableFile ? readText(path.join(tmpAssets, routeTableFile)) : null;
 const navigate = navigateFile ? readText(path.join(tmpAssets, navigateFile)) : null;
@@ -150,6 +151,12 @@ const checks = {
     titleIconDedup: targets.titleIconDedupApplied(out),
     logoFetchBlock: Boolean(out && out.includes('/^\\/aip\\/connectors\\/[^/]+\\/logo\\?/.test(')),
     codexHomeIpcSkip: Boolean(out && out.includes('__codexHomeNoFollower')),
+    // panel-codex-home-ipc-skip must carry the follower's options object over
+    // verbatim. Rebuilding it from captures drops whatever Codex added since —
+    // 26.903 added shouldForwardThreadReadState — and the marker check above is
+    // blind to that, so assert the option survived the rewrite.
+    followerOptionsIntact: !(pristineOut && pristineOut.includes('shouldForwardThreadReadState'))
+        || Boolean(out && out.includes('shouldForwardThreadReadState')),
     // A patch that renders the webview inert still passes every marker check —
     // this one failed silently once. See lib/targets.js for the shapes.
     hostAppViewIntact: targets.hostAppViewIntact(out),

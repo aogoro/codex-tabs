@@ -71,7 +71,13 @@ Patches that are essential for opening a tab are required — if one of them no 
 
 ## After Codex updates
 
-When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.820.60940**.
+Codex updates in the background while Cursor keeps running, so patching only at startup is not enough: the window stays on the version it loaded, its files on disk are replaced by a stock build, and the next tab pairs mismatched halves and renders an error. The extension therefore also watches the extension registry (and window focus as a fallback) and patches a newly installed Codex as soon as it settles. When the window runs an older version than the newest on disk, it says so and offers Reload — the new version is already patched at that point. Last verified Codex build: **26.908.31457**.
+
+To patch an installation by hand — before starting Cursor, so the window comes up already patched:
+
+```bash
+node scripts/apply-patches.js        # writes to the real installation (same code path as activation)
+```
 
 If an update changes the internal structure, re-anchor the patches:
 
@@ -81,7 +87,7 @@ node scripts/verify-installed.js     # state of the real installation
 node scripts/restore-backups.js      # roll back to stock Codex from the .bak files
 ```
 
-`verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. Iterate with `restore-backups.js` + reload, since patches only apply to unpatched files.
+`verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. Iterate with `restore-backups.js` + `apply-patches.js`, since patches only apply to unpatched files.
 
 Both verify scripts check for markers, which proves a patch was written — not that Codex still works. After re-anchoring, always open a Codex tab and confirm the UI actually renders.
 
