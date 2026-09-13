@@ -110,6 +110,20 @@ function makeCodexNewTabUri() {
 }
 
 async function openCodexTab(viewColumn) {
+    // The toast at activation is easy to miss — it lands while the window is
+    // still filling up, and a missed one leaves the hotkey silently opening a
+    // tab with stock host behaviour: no icon, no titles, history in new tabs.
+    // Asking here costs one keystroke and only happens while the mismatch lasts.
+    const codexDir = targets.findCodexExtDir();
+    const pending = reloadRequired(codexDir, codexDir && targets.readCodexVersion(codexDir));
+    if (pending) {
+        const choice = await offerReload(pending.message, 'warning', 'Открыть как есть');
+        if (choice !== 'Открыть как есть') {
+            console.warn(`[codex-new-tab] tab not opened, reload required (${pending.reason})`);
+            return;
+        }
+    }
+
     try {
         await vscode.commands.executeCommand('chatgpt.newCodexPanel');
     } catch (_) {
@@ -684,51 +698,76 @@ function patchCodex(codexDirOverride) {
 // --- Activation ---
 
 let patchedDir = null;      // install the last patch cycle ran against
-let warnedDriftDir = null;  // install we already warned about being newer than the running one
+let warnedDriftDir = null;  // install we already warned needs a reload
 let cycleInFlight = false;
 let repatchTimer = null;
 
-function offerReload(message, kind) {
+function offerReload(message, kind, extraChoice) {
     const show = kind === 'warning'
         ? vscode.window.showWarningMessage
         : vscode.window.showInformationMessage;
-    show.call(vscode.window, message, 'Reload').then((choice) => {
+    const choices = extraChoice ? ['Reload', extraChoice] : ['Reload'];
+    return show.call(vscode.window, message, ...choices).then((choice) => {
         if (choice === 'Reload') {
             vscode.commands.executeCommand('workbench.action.reloadWindow');
         }
+        return choice;
     });
 }
 
-// A Codex that updated under a running window is the failure this reports: the
-// host file the window loaded is gone from disk, so a new tab pairs stock
-// webview assets with patched host code (or the reverse) and renders an error.
-// Patching the running install instead would deepen that mismatch — its
-// out/extension.js is already in the extension host process, while webview
-// assets are re-read per panel. Only a reload gets the window onto one version.
-function reportVersionDrift(newestDir, newestVersion) {
+// Patches written after the extension host started cannot reach the Codex host
+// module: it was require'd at activation, and extensionDependencies guarantees
+// Codex activates first, so our write always lands seconds too late. Comparing
+// the host file's mtime with the process start catches that — and unlike a
+// session flag it also sees writes from apply-patches.js or another window.
+function hostFileStale(codexDir) {
+    if (!codexDir) return false;
+    try {
+        const { mtimeMs } = fs.statSync(path.join(codexDir, 'out', 'extension.js'));
+        return mtimeMs > Date.now() - process.uptime() * 1000;
+    } catch (_) {
+        return false;
+    }
+}
+
+// Both halves of a Codex install have to come from the same version, and only a
+// window reload can get there: the host file is in the extension host process,
+// while webview assets are re-read per panel. Two ways that pairing breaks —
+// Codex updated under a running window, or the patches landed after the window
+// had already loaded the stock host file.
+function reloadRequired(codexDir, codexVersion) {
     const running = vscode.extensions.getExtension(CODEX_EXT_ID);
     const runningDir = running && running.extensionPath;
-    if (!runningDir || !newestDir || runningDir === newestDir) return false;
-    if (warnedDriftDir === newestDir) return true;
+    const runningVersion = (running && running.packageJSON && running.packageJSON.version) || 'unknown';
 
-    warnedDriftDir = newestDir;
-    const runningVersion = (running.packageJSON && running.packageJSON.version) || 'unknown';
-    console.warn(`[codex-new-tab] Codex drift: window runs ${runningVersion}, newest on disk ${newestVersion || 'unknown'}`);
-    offerReload(
-        `Codex обновился до ${newestVersion || '?'}, окно работает на ${runningVersion}. `
-        + 'Патчи для новой версии применены — перезагрузи окно.',
-        'warning'
-    );
-    return true;
+    if (runningDir && codexDir && runningDir !== codexDir) {
+        return {
+            reason: 'version-drift',
+            message: `Codex обновился до ${codexVersion || '?'}, окно работает на ${runningVersion}. `
+                + 'Патчи для новой версии применены — перезагрузи окно.',
+        };
+    }
+    if (hostFileStale(codexDir)) {
+        return {
+            reason: 'stale-host',
+            message: `Патчи для Codex ${codexVersion || runningVersion} применены, но окно загрузило `
+                + 'стоковую версию — перезагрузи окно.',
+        };
+    }
+    return null;
 }
 
 function runPatchCycle(codexDir) {
     const { patched, skipped, codexVersion } = patchCodex(codexDir);
-    const drifted = reportVersionDrift(codexDir, codexVersion);
+    const pending = reloadRequired(codexDir, codexVersion);
 
-    if (patched && !drifted) {
+    if (pending && warnedDriftDir !== codexDir) {
+        warnedDriftDir = codexDir;
+        console.warn(`[codex-new-tab] reload required (${pending.reason}): ${pending.message}`);
+        offerReload(pending.message, 'warning');
+    } else if (patched && !pending) {
         offerReload('Codex tab patches applied. Reload window to apply.');
-    } else if (!patched) {
+    } else if (!patched && !pending) {
         // Nothing to write means the install is already patched. Say so in
         // the log — silence here reads as "the extension did nothing".
         console.log(`[codex-new-tab] patches already applied (Codex ${codexVersion || 'unknown'})`);
