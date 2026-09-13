@@ -51,7 +51,7 @@ node ~/.cursor/extensions/aogoro.codex-tabs-0.1.0/scripts/verify-installed.js
 
 | Command | Hotkey | Description |
 |---------|--------|-------------|
-| Codex: Open | `Cmd+Shift+J` | Open a new Codex tab |
+| Codex: Open | `Cmd+Shift+J` | Open a new Codex tab. Offers Reload first while the window still runs a stock Codex — see [After Codex updates](#after-codex-updates) |
 | Codex: Add to Thread | `Cmd+J` | Add selection to active thread |
 
 ## How it works
@@ -71,7 +71,11 @@ Patches that are essential for opening a tab are required — if one of them no 
 
 ## After Codex updates
 
-Codex updates in the background while Cursor keeps running, so patching only at startup is not enough: the window stays on the version it loaded, its files on disk are replaced by a stock build, and the next tab pairs mismatched halves and renders an error. The extension therefore also watches the extension registry (and window focus as a fallback) and patches a newly installed Codex as soon as it settles. When the window runs an older version than the newest on disk, it says so and offers Reload — the new version is already patched at that point. Last verified Codex build: **26.908.31457**.
+Codex updates in the background while Cursor keeps running, so patching only at startup is not enough: the window stays on the version it loaded, its files on disk are replaced by a stock build, and the next tab pairs mismatched halves. The extension therefore also watches the extension registry (and window focus as a fallback) and patches a newly installed Codex as soon as it settles. Last verified Codex build: **26.908.40401**.
+
+**Every Codex update costs one window reload, and that is structural.** `extensionDependencies` makes Cursor activate Codex before this extension, so Codex has already `require`d its host file by the time patches are written — the copy in the extension host process stays stock until the window reloads. The extension detects that state from the mtime of `out/extension.js` against its own process start, warns with a Reload button, and `Codex: Open` asks again before handing over a half-patched tab.
+
+Until that reload, `Cmd+Shift+J` goes through the stock `createNewPanel`, which opens the URI `/extension/panel/new`. Three symptoms follow, and none of them is normal: the tab is labelled **new** (the last path segment) instead of **Codex**, it shows no chat list, and it greets you with the "Codex in your IDE" walkthrough on every new tab. Reload the window and they all go away together.
 
 To patch an installation by hand — before starting Cursor, so the window comes up already patched:
 
