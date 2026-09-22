@@ -71,7 +71,7 @@ Patches that are essential for opening a tab are required — if one of them no 
 
 ## After Codex updates
 
-When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.820.60940**.
+When the OpenAI Codex extension updates, patches are automatically re-applied on next Cursor startup. Last verified Codex build: **26.908.40401**.
 
 If an update changes the internal structure, re-anchor the patches:
 
@@ -83,7 +83,9 @@ node scripts/restore-backups.js      # roll back to stock Codex from the .bak fi
 
 `verify-clean-apply.js` never touches the installation — it patches copies in a temp directory. Look for new anchors in `<codex>/webview/assets/app-initial-*.js` (webview) and `<codex>/out/extension.js` (host); file lookup lives in `lib/targets.js`, patch definitions in `extension.js`. Iterate with `restore-backups.js` + reload, since patches only apply to unpatched files.
 
-Both verify scripts check for markers, which proves a patch was written — not that Codex still works. After re-anchoring, always open a Codex tab and confirm the UI actually renders.
+Anchors survive renames better than positions do. Since 26.908 the home-path test lives in its own predicate (`function uh(e){return e===`/`||!1}`) instead of the RouteScope resolver, so `route-home-kind` and its check resolve that predicate by name out of the `routeKind:`home`` branch and work on the declaration.
+
+Both verify scripts check for markers, which proves a patch was written — not that it landed in the right place, and not that Codex still works. Anchor new checks on the insertion site, the way `routeHomeKindApplied` and `hostAppViewIntact` do. After re-anchoring, always open a Codex tab and confirm the UI actually renders; a crash on mount shows up as `error boundary` in the Codex output channel.
 
 ## Third-party assets
 

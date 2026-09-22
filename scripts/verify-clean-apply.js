@@ -127,7 +127,8 @@ const navigate = navigateFile ? readText(path.join(tmpAssets, navigateFile)) : n
 const historyBlock = sliceFrom(out, 'case"navigate-in-current-editor-tab"', 1800);
 
 const checks = {
-    routeHomeKind: Boolean(route && route.includes('===`/Codex`')),
+    // Marker-free: the patch text alone proves nothing about where it landed.
+    routeHomeKind: targets.routeHomeKindApplied(route),
     routeReactCopy: Boolean(routeTable && routeTable.includes('path:`/Codex`')),
     historyClickCurrentPanel: Boolean(
         navigate && navigate.includes('navigate-in-current-editor-tab')
@@ -139,7 +140,14 @@ const checks = {
     panelIconOnCreate: targets.panelIconOnCreate(out),
     panelIconOnResolve: targets.panelIconOnResolve(out),
     titleBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
-    titleRouteDispatch: Boolean(route && route.includes('codex-route-local-thread')),
+    // Presence of the message name proves nothing about the object it is
+    // dispatched on: `this.dispatchMessage` at the route site throws into the
+    // bridge's own catch and the titles silently stop updating.
+    titleRouteDispatch: Boolean(
+        route
+        && /[\w$]+\.dispatchMessage\(`codex-route-local-thread`/.test(route)
+        && !route.includes('this.dispatchMessage(`codex-route-local-thread`')
+    ),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     // The async preview refresh must keep the route label when no preview

@@ -72,9 +72,23 @@ function discoverHost(content) {
     };
 }
 
+// The alias other modules call the dispatcher through — not `this`, which is
+// what the first match in the bundle gives: the dispatcher class defines the
+// method on itself before anyone uses it (26.908: three `this.dispatchMessage`
+// at the class, then 27 `ap.dispatchMessage`). The bridge is injected into a
+// route resolver, where `this` is not the dispatcher, and the miss is silent —
+// the call sits inside the bridge's own try/catch, so tab titles just stop.
 function discoverDispatcher(content) {
-    const aliasMatch = content.match(/([\w$]+)\.dispatchMessage/);
-    return aliasMatch ? aliasMatch[1] : null;
+    const counts = new Map();
+    for (const m of content.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\.dispatchMessage/g)) {
+        if (m[1] === 'this') continue;
+        counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+    }
+    let alias = null;
+    for (const [name, n] of counts) {
+        if (!alias || n > counts.get(alias)) alias = name;
+    }
+    return alias;
 }
 
 function parseParams(content, anchor) {
@@ -158,24 +172,19 @@ function replaceBetween(content, startAnchor, endAnchor, replacement) {
     return content.substring(0, start) + replacement + content.substring(end);
 }
 
-// Exact `[start, end)` of a `function NAME(...){...}` declaration, by brace
-// balance. Ending a replacement at "the next function we know about" instead
-// silently deletes anything Codex emits in between: 26.803 inserted a live
-// helper between the route parser and the uri builder, and the marker check
-// plus `node --check` both pass on the result.
-// Strings and template literals are tracked; regex literals are not — a `{`
-// or a quote inside one would throw the scan off. None of the functions we
-// patch contain one, and a bad scan degrades to a skipped patch, not a
-// corrupted bundle.
-function findFunctionSpan(content, name) {
-    const start = content.indexOf(`function ${name}(`);
-    if (start === -1) return null;
-    const bodyStart = content.indexOf('{', start);
-    if (bodyStart === -1) return null;
+const OPENERS = { '{': '}', '(': ')', '[': ']' };
 
-    const stack = []; // '{' = code block, '`' = template literal
+// End index (exclusive) of the bracket that closes the one at `openIdx`, or -1.
+// Strings and template literals are tracked; regex literals are not — a
+// bracket or a quote inside one would throw the scan off. None of the code we
+// span contains one, and a bad scan degrades to a skipped patch, not a
+// corrupted bundle.
+function matchDelimited(content, openIdx) {
+    if (!OPENERS[content[openIdx]]) return -1;
+
+    const stack = [content[openIdx]]; // brackets and '`' = template literal
     let quote = null;
-    for (let i = bodyStart; i < content.length; i++) {
+    for (let i = openIdx + 1; i < content.length; i++) {
         const ch = content[i];
         if (quote) {
             if (ch === '\\') i++;
@@ -189,13 +198,27 @@ function findFunctionSpan(content, name) {
             continue;
         }
         if (ch === '"' || ch === "'") quote = ch;
-        else if (ch === '`' || ch === '{') stack.push(ch);
-        else if (ch === '}') {
+        else if (ch === '`' || OPENERS[ch]) stack.push(ch);
+        else if (ch === '}' || ch === ')' || ch === ']') {
             stack.pop();
-            if (stack.length === 0) return [start, i + 1];
+            if (stack.length === 0) return i + 1;
         }
     }
-    return null;
+    return -1;
+}
+
+// Exact `[start, end)` of a `function NAME(...){...}` declaration, by bracket
+// balance. Ending a replacement at "the next function we know about" instead
+// silently deletes anything Codex emits in between: 26.803 inserted a live
+// helper between the route parser and the uri builder, and the marker check
+// plus `node --check` both pass on the result.
+function findFunctionSpan(content, name) {
+    const start = content.indexOf(`function ${name}(`);
+    if (start === -1) return null;
+    const bodyStart = content.indexOf('{', start);
+    if (bodyStart === -1) return null;
+    const end = matchDelimited(content, bodyStart);
+    return end === -1 ? null : [start, end];
 }
 
 function applyPatchSpec(spec, report) {
@@ -252,6 +275,37 @@ function applyPatchGroup(patches, report) {
 
 // --- Patches ---
 
+// Where `/Codex` has to be spliced in: the `pathname -> routeKind` resolver
+// behind the RouteScope atom. Taking the first `X===`/`||` in the bundle was
+// wrong from 26.825 on — the build emits an unrelated pathname mapper ahead of
+// the resolver, so `/Codex` landed in dead code, the resolver kept answering
+// `other` for the tab, and the home screen threw on mount. Anchor on the
+// `/hotkey-window` sibling; fall back to the last candidate that still
+// precedes the RouteScope registration.
+function findRouteHomeKindAnchor(content) {
+    const sibling = /([\w$]+)===`\/`\|\|\1===`\/hotkey-window`/.exec(content);
+    if (sibling) {
+        return { index: sibling.index, text: `${sibling[1]}===\`/\`||`, id: sibling[1] };
+    }
+
+    // 26.908: the test moved into a predicate the home branch calls. Splice
+    // into its declaration — the resolver and the telemetry mapper both go
+    // through it, so one insertion covers every caller.
+    const pred = targets.homePathPredicate(content);
+    if (pred) {
+        const text = `${pred.param}===\`/\`||`;
+        return { index: pred.index + pred.head.indexOf(text), text, id: pred.param };
+    }
+
+    const scope = content.indexOf('`RouteScope`,{key:');
+    if (scope === -1) return null;
+
+    const re = /([\w$]+)===`\/`\|\|/g;
+    let last = null;
+    for (let m = re.exec(content); m && m.index < scope; m = re.exec(content)) last = m;
+    return last ? { index: last.index, text: last[0], id: last[1] } : null;
+}
+
 function patchRouteHome(assetsDir, report) {
     const routeFile = targets.findRouteAssetFile(assetsDir);
     const routeTableFile = targets.findRouteTableFile(assetsDir);
@@ -262,14 +316,18 @@ function patchRouteHome(assetsDir, report) {
         {
             id: 'route-home-kind',
             file: routePath,
-            marker: '===`/Codex`',
+            // Not a marker: `===`/Codex`` anywhere in the file also matches a
+            // patch that landed in the wrong function. This one asserts the
+            // splice sits in the branch that yields `routeKind:`home``, both
+            // for the already-applied check and for the result.
+            verify: targets.routeHomeKindApplied,
             transform(content) {
-                if (content.includes('===`/Codex`')) return null;
-                const re = /([\w$])===`\/`\|\|/;
-                const m = re.exec(content);
-                if (!m) return null;
-                const v = m[1];
-                return replaceLiteral(content, m[0], `${v}===\`/\`||${v}===\`/Codex\`||`);
+                const anchor = findRouteHomeKindAnchor(content);
+                if (!anchor) return null;
+                const { id, index, text } = anchor;
+                return content.substring(0, index)
+                    + `${id}===\`/\`||${id}===\`/Codex\`||`
+                    + content.substring(index + text.length);
             },
         },
         {
@@ -377,17 +435,26 @@ function patchPanelLifecycle(extensionPath, ids, report) {
             required: false,
             marker: '__codexHomeNoFollower',
             transform(content) {
-                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:([\w$]+),viewService:([\w$]+)\.services\.clientCoordination\}\)/;
+                // Match the head of the call only and take the rest by bracket
+                // balance: 26.908 appended `shouldForwardThreadReadState` (an
+                // async arrow) to the options object, and a pattern that ended
+                // at `clientCoordination})` stopped matching.
+                const re = /([\w$]+)=([\w$]+)\(\{hostId:"local",ipcClient:[\w$]+,viewService:[\w$]+\.services\.clientCoordination(?=[,}])/;
                 const m = re.exec(content);
                 if (!m) return null;
-                const [full, resultVar, followerFn, ipcVar, appViewVar] = m;
+                const [head, resultVar, followerFn] = m;
+                const callOpen = m.index + head.indexOf(`${followerFn}(`) + followerFn.length;
+                const callEnd = matchDelimited(content, callOpen);
+                if (callEnd === -1) return null;
+                const call = content.substring(callOpen - followerFn.length, callEnd);
                 const sessionParams = parseParams(content, 'createClientCoordinationSession');
                 const webviewVar = sessionParams ? sessionParams[0] : 'e';
                 const replacement =
-                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:`
-                    + `${followerFn}({hostId:"local",ipcClient:${ipcVar},viewService:${appViewVar}.services.clientCoordination}))`
+                    `${resultVar}=(__codexHomeNoFollower=>__codexHomeNoFollower?()=>{}:${call})`
                     + `(this.editorPanels.get(this.findPanelByWebview(${webviewVar}))?.initialRoute==="/Codex")`;
-                return replaceLiteral(content, full, replacement);
+                return content.substring(0, m.index)
+                    + replacement
+                    + content.substring(callEnd);
             },
         },
         {
