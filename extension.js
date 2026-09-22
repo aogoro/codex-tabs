@@ -77,9 +77,23 @@ function discoverHost(content) {
     };
 }
 
+// The alias other modules call the dispatcher through — not `this`, which is
+// what the first match in the bundle gives: the dispatcher class defines the
+// method on itself before anyone uses it (26.908: three `this.dispatchMessage`
+// at the class, then 27 `ap.dispatchMessage`). The bridge is injected into a
+// route resolver, where `this` is not the dispatcher, and the miss is silent —
+// the call sits inside the bridge's own try/catch, so tab titles just stop.
 function discoverDispatcher(content) {
-    const aliasMatch = content.match(/([\w$]+)\.dispatchMessage/);
-    return aliasMatch ? aliasMatch[1] : null;
+    const counts = new Map();
+    for (const m of content.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\.dispatchMessage/g)) {
+        if (m[1] === 'this') continue;
+        counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+    }
+    let alias = null;
+    for (const [name, n] of counts) {
+        if (!alias || n > counts.get(alias)) alias = name;
+    }
+    return alias;
 }
 
 function parseParams(content, anchor) {
@@ -303,6 +317,38 @@ function applyPatchGroup(patches, report) {
 
 // --- Patches ---
 
+// Where `/Codex` has to be spliced in: the pathname test the RouteScope
+// resolver consults. Taking the first `X===`/`||` in the bundle was wrong from
+// 26.825 on — the build emits unrelated `===`/`` comparisons, and a patch that
+// lands in one of them leaves the resolver answering `other` for the tab while
+// every marker check stays green.
+function findRouteHomeKindAnchor(content) {
+    // Up to 26.825: inline in the resolver, next to the sibling pathnames.
+    const sibling = /([\w$]+)===`\/`\|\|\1===`\/hotkey-window`/.exec(content);
+    if (sibling) {
+        return { index: sibling.index, text: `${sibling[1]}===\`/\`||`, id: sibling[1] };
+    }
+
+    // 26.908: the test moved into a predicate the home branch calls. Splice
+    // into its declaration — the resolver and the telemetry mapper both go
+    // through it, so one insertion covers every caller.
+    const pred = targets.homePathPredicate(content);
+    if (pred) {
+        const text = `${pred.param}===\`/\`||`;
+        return { index: pred.index + pred.head.indexOf(text), text, id: pred.param };
+    }
+
+    // Neither shape recognized: fall back to the last candidate that still
+    // precedes the RouteScope registration.
+    const scope = content.indexOf('`RouteScope`,{key:');
+    if (scope === -1) return null;
+
+    const re = /([\w$]+)===`\/`\|\|/g;
+    let last = null;
+    for (let m = re.exec(content); m && m.index < scope; m = re.exec(content)) last = m;
+    return last ? { index: last.index, text: last[0], id: last[1] } : null;
+}
+
 function patchRouteHome(assetsDir, report) {
     const routeFile = targets.findRouteAssetFile(assetsDir);
     const routeTableFile = targets.findRouteTableFile(assetsDir);
@@ -313,14 +359,18 @@ function patchRouteHome(assetsDir, report) {
         {
             id: 'route-home-kind',
             file: routePath,
-            marker: '===`/Codex`',
+            // Not a marker: `===`/Codex`` anywhere in the file also matches a
+            // patch that landed in the wrong comparison. This one asserts the
+            // splice sits in the pathname test the resolver consults, both for
+            // the already-applied check and for the result.
+            verify: targets.routeHomeKindApplied,
             transform(content) {
-                if (content.includes('===`/Codex`')) return null;
-                const re = /([\w$])===`\/`\|\|/;
-                const m = re.exec(content);
-                if (!m) return null;
-                const v = m[1];
-                return replaceLiteral(content, m[0], `${v}===\`/\`||${v}===\`/Codex\`||`);
+                const anchor = findRouteHomeKindAnchor(content);
+                if (!anchor) return null;
+                const { id, index, text } = anchor;
+                return content.substring(0, index)
+                    + `${id}===\`/\`||${id}===\`/Codex\`||`
+                    + content.substring(index + text.length);
             },
         },
         {

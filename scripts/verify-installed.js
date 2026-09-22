@@ -57,7 +57,7 @@ const checks = {
     routeAssetReadable: Boolean(route),
     routeTableReadable: Boolean(routeTable),
     navigateAssetReadable: Boolean(navigate),
-    routeHomeKind: Boolean(route && route.includes('===`/Codex`')),
+    routeHomeKind: targets.routeHomeKindApplied(route),
     routeReactCopy: Boolean(routeTable && routeTable.includes('path:`/Codex`')),
     historyClickCurrentPanel: Boolean(
         navigate && navigate.includes('navigate-in-current-editor-tab')
@@ -68,7 +68,14 @@ const checks = {
     noHistoryOpenWith: Boolean(historyBlock && !historyBlock.includes('vscode.openWith') && !historyBlock.includes('.dispose()')),
     panelIconOnCreate: targets.panelIconOnCreate(out),
     panelIconOnResolve: targets.panelIconOnResolve(out),
-    titleRouteBridge: Boolean(route && route.includes('__codexNewTabTitleBridge') && route.includes('MutationObserver')),
+    titleRouteBridge: Boolean(
+        route
+        && route.includes('__codexNewTabTitleBridge')
+        && route.includes('MutationObserver')
+        // Dispatched on the module alias, never on `this` — see the same check
+        // in verify-clean-apply.js.
+        && !route.includes('this.dispatchMessage(`codex-route-local-thread`')
+    ),
     titleHostBridge: Boolean(out && out.includes('case"codex-route-local-thread-title":')),
     routeLabelParser: Boolean(out && out.includes('routeLabel')),
     titlePreviewFallback: Boolean(out && out.includes('??__rl)')),
